@@ -8,7 +8,8 @@ import upstride_argparse as argparse
 
 arguments = [
     [str, "server", '', 'address of the server to connect using ssh'],
-    [str, 'local_dir', '', 'path of the directory containing teh results']
+    [str, 'remote_dir', '', "directory of the keras tuner experiment on the remote server"],
+    [str, 'local_dir', '', 'path of the directory containing the results']
 ]
 
 try:
@@ -44,7 +45,10 @@ def split_json(cmd_out):
 
 
 def main():
-  out = run_bash('ssh titanv "cd /home/sebastien/workspace/imagenet-baselines/checkpoint_tuner/keras_tuner_MobileNetV2Cifar10Hyper/untitled_project && cat */trial.json"')
+  args = argparse.parse_cmd(arguments)
+  server = args['server']
+  remote_dir = args['remote_dir']
+  out = run_bash(f'ssh {server} "cd {remote_dir} && cat */trial.json"')
   jsons = split_json(out)
   for trial in jsons:
     trial = json.loads(trial)
