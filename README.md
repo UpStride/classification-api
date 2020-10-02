@@ -33,7 +33,7 @@ If you forgot to do it, don't panic you can still do a `git submodule update --i
 
 The easiest way is to use docker; we provide 2 docker files, one to run these code using Tensorflow 2.3, and the other one to run UpStride 1.0. 
 
-You can build them by using `make build` or `make build-tensorflow`.
+You can build them by using `make build` or `make build_tensorflow`.
 
 The tensorflow docker image will soon be on dockerhub. 
 
