@@ -56,8 +56,6 @@ Get started with [cat vs dog classification example](documentation/cat_dog.ipynb
 
 ## Would you like to contribute?
 
-We are very thankful to the community for showing interest in improving this repository. 
-
 If you discovered a bug or have any idea please raise an issue. If you wish to contribute, pull requests are also welcome. 
 
 We will try to review them as fast as possible to integrate your work in a timely manner. 
