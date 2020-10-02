@@ -1,0 +1,6 @@
+parameter_int: 1
+parameter_str: plop
+parameter_list: [1, 2, 3]
+parameter_bool: true
+parameter_dict:
+  parameter_int: 3

@@ -1,0 +1,12 @@
+__pycache__
+results*.md
+profiling
+README_perso.md
+user_conf*.yml
+.coverage
+coverage.xml
+rabbitmq_conf.yml
+*_conf.yml
+.vscode
+inference_config
+.stfolder

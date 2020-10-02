@@ -1,0 +1,3 @@
+[submodule "submodules/global_dl"]
+	path = submodules/global_dl
+	url = git@github.com:UpStride/global-dl.git

@@ -1,0 +1,6 @@
+train:
+  description: UpStride Classification training script
+  main: train
+  flags-dest: args
+  flags-import: all
+  output-scalars: '(\key): (\value)'

@@ -1,0 +1,15 @@
+model_name: MobileNetV2
+num_epochs: 2
+checkpoint_dir: exp/checkpoint
+log_dir: exp/log
+framework: tensorflow
+export_dir: exp
+dataloader:
+  name: cifar10
+  train_list: [RandomHorizontalFlip, Normalize]
+  val_list:  [Normalize]
+  batch_size: 64
+input_size: [32, 32, 3]
+num_classes: 10
+optimizer:
+  lr: 0.0001

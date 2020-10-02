@@ -1,0 +1,250 @@
+import tqdm
+import yaml
+from tensorflow.keras.losses import CategoricalCrossentropy
+from tensorflow.keras.metrics import CategoricalAccuracy, Mean
+from src.models.fbnetv2 import ChannelMasking, define_temperature
+from submodules.global_dl.global_conf import config_tf2
+import math
+import os
+import tensorflow as tf
+import upstride_argparse as argparse
+from src.argument_parser import training_arguments_no_keras_tuner, training_arguments_das
+from src.data import dataloader
+from src.models import model_name_to_class
+from src.utils import check_folder, get_imagenet_data, model_dir
+from submodules.global_dl import global_conf
+from submodules.global_dl.training.training import create_env_directories, setup_mp, define_model_in_strategy, get_callbacks, init_custom_checkpoint_callbacks
+from submodules.global_dl.training import training
+from submodules.global_dl.training import alchemy_api
+from submodules.global_dl.training import export
+from submodules.global_dl.training.optimizers import get_lr_scheduler, get_optimizer, StepDecaySchedule, CosineDecay
+from submodules.global_dl.training import optimizers
+
+
+
+arguments = [
+    ['namespace', 'dataloader', dataloader.arguments],
+    ['namespace', 'server', alchemy_api.arguments],
+    ['namespace', 'optimizer', optimizers.arguments],
+    ['namespace', 'export', export.arguments],
+    [int, "factor", 1, 'division factor to scale the number of channel. factor=2 means the model will have half the number of channels compare to default implementation'],
+    [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
+    [str, 'load_searched_arch', '', 'model definition file containing the searched architecture'],
+] + global_conf.arguments + training.arguments + training_arguments_no_keras_tuner + training_arguments_das
+
+
+def exponential_decay(initial_value, decay_steps, decay_rate, ):
+    """
+            Applies exponential decay to initial value
+         Args:
+            initial_value: The initial learning value
+            decay_steps: Number of steps to decay over
+            decay_rate: decay rate
+        """
+    return lambda step: initial_value * decay_rate ** (step / decay_steps)
+
+
+def split_trainable_weights(model):
+    """
+        split the model parameters  in weights and architectural params
+    """
+    weights = []
+    arch_params = []
+    for trainable_weight in model.trainable_variables:
+        if 'alpha' in trainable_weight.name:
+            arch_params.append(trainable_weight)
+        else:
+            weights.append(trainable_weight)
+
+    return model.trainable_variables, arch_params
+
+
+def main():
+    """ function called when starting the code via command-line
+    """
+    args = argparse.parse_cmd(arguments)
+    args['server'] = alchemy_api.start_training(args['server'])
+    train(args)
+
+
+def get_experiment_name(args):
+    experiment_dir = f"{args['model_name']}_{args['framework']}"
+    if 'mix' in args['framework']:
+        experiment_dir += "_mix_{}".format(args['n_layers_before_tf'])
+    if args['configuration']['with_mixed_precision']:
+        experiment_dir += "_mp"
+    return experiment_dir
+
+
+def post_training_analysis(model, saved_file_path):
+    layer_name = ''
+    saved_file_content = {}
+    for layer in model.layers:
+        # if type(layer) == tf.keras.Conv2D:
+        #     layer_name = layer.name
+        if type(layer) == ChannelMasking and layer.name[-8:] == '_savable':
+            layer_name = layer.name[:-8]
+            max_alpha_id = int(tf.math.argmax(layer.alpha).numpy())
+            value = layer.min + max_alpha_id * layer.step
+            saved_file_content[layer_name] = value
+    print(saved_file_content)
+    with open(saved_file_path, 'w') as f:
+        yaml.dump(saved_file_content, f)
+
+
+def train(args):
+    # config_tf2(args['configuration']['xla'])
+    # Create log, checkpoint and export directories
+    checkpoint_dir, log_dir, export_dir = create_env_directories(args, get_experiment_name(args))
+
+    train_weight_dataset = dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['train_list'],
+                                           num_classes=args["num_classes"], split='train_weights')
+    train_arch_dataset = dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['train_list'],
+                                           num_classes=args["num_classes"], split='train_arch')
+    val_dataset = dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['val_list'],
+                                         num_classes=args["num_classes"], split='validation')
+
+    setup_mp(args)
+
+    # define model, optimizer and checkpoint callback
+    model = model_name_to_class[args['model_name']](args['framework'],
+                                                    input_shape=args['input_size'],
+                                                    label_dim=args['num_classes']).model
+    model.summary()
+    alchemy_api.send_model_info(model, args['server'])
+    weight_opt = get_optimizer(args['optimizer'])
+    arch_opt = get_optimizer(args['arch_optimizer_param'])
+    model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir)
+
+    weights, arch_params = split_trainable_weights(model)
+    temperature_decay_fn = exponential_decay(args['temperature']['init_value'],
+                                               args['temperature']['decay_steps'],
+                                               args['temperature']['decay_rate'])
+
+    lr_decay_fn = CosineDecay(args['optimizer']['lr'],
+                              alpha=args["optimizer"]["lr_decay_strategy"]["lr_params"]["alpha"],
+                              total_epochs=args['num_epochs'])
+
+    loss_fn = CategoricalCrossentropy()
+    accuracy_metric = CategoricalAccuracy()
+    loss_metric = Mean()
+    val_accuracy_metric = CategoricalAccuracy()
+    val_loss_metric = Mean()
+
+    train_log_dir = os.path.join(args['log_dir'], 'train')
+    val_log_dir = os.path.join(args['log_dir'], 'validation')
+    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+    val_summary_writer = tf.summary.create_file_writer(val_log_dir)
+
+    @tf.function
+    def train_step(x_batch, y_batch):
+        with tf.GradientTape() as tape:
+            y_hat = model(x_batch, training=True)
+            loss = loss_fn(y_batch, y_hat)
+
+        accuracy_metric.update_state(y_batch, y_hat)
+        loss_metric.update_state(loss)
+        grads = tape.gradient(loss, weights)
+        weight_opt.apply_gradients(zip(grads, weights))
+
+    @tf.function
+    def train_step_arch(x_batch, y_batch):
+        with tf.GradientTape() as tape:
+            y_hat = model(x_batch, training=False)
+            loss = loss_fn(y_batch, y_hat)
+
+        accuracy_metric.update_state(y_batch, y_hat)
+        loss_metric.update_state(loss)
+        grads = tape.gradient(loss, arch_params)
+        arch_opt.apply_gradients(zip(grads, arch_params))
+
+    @tf.function
+    def evaluation_step(x_batch, y_batch):
+        y_hat = model(x_batch, training=False)
+        loss = loss_fn(y_batch, y_hat)
+
+        val_accuracy_metric.update_state(y_batch, y_hat)
+        val_loss_metric.update_state(loss)
+
+    for epoch in range(latest_epoch, args['num_epochs']):
+        print(f'Epoch: {epoch}/{args["num_epochs"]}')
+
+        weight_opt.learning_rate = lr_decay_fn(epoch)
+
+        # Updating the weight parameters using a subset of the training data
+        for step, (x_batch, y_batch) in tqdm.tqdm(enumerate(train_weight_dataset, start=1)):
+            train_step(x_batch, y_batch)
+
+        # Evaluate the model on validation subset
+        for x_batch, y_batch in val_dataset:
+            evaluation_step(x_batch, y_batch)
+
+        train_accuracy = accuracy_metric.result()
+        train_loss = loss_metric.result()
+        val_accuracy = val_accuracy_metric.result()
+        val_loss = val_loss_metric.result()
+
+        template = f'Weights updated, Epoch {epoch}, Train Loss: {float(train_loss)}, Train Accuracy: ' \
+            f'{float(train_accuracy)}, Val Loss: {float(val_loss)}, Val Accuracy: {float(val_accuracy)}, ' \
+            f'lr: {float(weight_opt.learning_rate)}'
+        print(template)
+
+        new_temperature = temperature_decay_fn(epoch)
+
+        with train_summary_writer.as_default():
+            tf.summary.scalar('loss', train_loss, step=epoch)
+            tf.summary.scalar('accuracy', train_accuracy, step=epoch)
+            tf.summary.scalar('temperature', new_temperature, step=epoch)
+
+        with val_summary_writer.as_default():
+            tf.summary.scalar('loss', val_loss, step=epoch)
+            tf.summary.scalar('accuracy', val_accuracy, step=epoch)
+
+        # Resetting metrices for reuse
+        accuracy_metric.reset_states()
+        loss_metric.reset_states()
+        val_accuracy_metric.reset_states()
+        val_loss_metric.reset_states()
+
+        if epoch >= 10:
+            # Updating the architectural parameters on another subset
+            for step, (x_batch, y_batch) in tqdm.tqdm(enumerate(train_arch_dataset, start=1)):
+                train_step_arch(x_batch, y_batch)
+
+            # Evaluate the model on validation subset
+            for x_batch, y_batch in val_dataset:
+                evaluation_step(x_batch, y_batch)
+
+            train_accuracy = accuracy_metric.result()
+            train_loss = loss_metric.result()
+            val_accuracy = val_accuracy_metric.result()
+            val_loss = val_loss_metric.result()
+
+            template = f'Arch params updated, Epoch {epoch}, Train Loss: {float(train_loss)}, Train Accuracy: ' \
+                f'{float(train_accuracy)}, Val Loss: {float(val_loss)}, Val Accuracy: {float(val_accuracy)}'
+            print(template)
+            with train_summary_writer.as_default():
+                tf.summary.scalar('loss_after_arch_params_update', train_loss, step=epoch)
+                tf.summary.scalar('accuracy_after_arch_params_update', train_accuracy, step=epoch)
+
+            with val_summary_writer.as_default():
+                tf.summary.scalar('loss_after_arch_params_update', val_loss, step=epoch)
+                tf.summary.scalar('accuracy_after_arch_params_update', val_accuracy, step=epoch)
+
+            # Resetting metrices for reuse
+            accuracy_metric.reset_states()
+            loss_metric.reset_states()
+            val_accuracy_metric.reset_states()
+            val_loss_metric.reset_states()
+
+        define_temperature(new_temperature)
+
+    print("Training Completed!!")
+
+    print("Architecture params: ")
+    print(arch_params)
+    post_training_analysis(model, args['exported_architecture'])
+
+
+if __name__ == '__main__':
+    main()
