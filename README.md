@@ -44,11 +44,11 @@ The tensorflow docker image will soon be on dockerhub.
 
 
 
-See the 🎓 *Documentation*
+See the 🎓 [Documentation](documentation/doc.md)
 
 or
 
-Get started with [cat vs dog classification example] 🕹 *Google Colab Demo*
+Get started with [cat vs dog classification example](documentation/cat_dog.ipynb)
 
 ## Unittesting and code coverage
 * To run the unittests, run `python test.pyr`
