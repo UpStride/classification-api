@@ -51,7 +51,7 @@ or
 Get started with [cat vs dog classification example](documentation/cat_dog.ipynb)
 
 ## Unittesting and code coverage
-* To run the unittests, run `python test.pyr`
+* To run the unittests, run `python test.py`
 * To get the coverage, run `coverage run test.py`. Then `coverage report` show the coverage information and `coverage xml` create a file usable by VSCode
 
 ## Would you like to contribute?
