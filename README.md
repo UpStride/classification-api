@@ -12,7 +12,7 @@ We are really excited today to open our Github to the world! After months of res
 
 We are sharing a classification code that we use internally to benchmark our engine on several datasets.
 
-This training script has also been shared to our clients to smooth the first time use of our product and  simplify the creation of state of the Art neural networks.
+This training script has also been shared to our clients to smooth the first time use of our product and  simplify the creation of state-of-the-art neural networks.
 
 We hope it will bring value to you as well!
 
@@ -22,7 +22,7 @@ We are also working on an integration of Keras-Tuner for metaparameter search an
 
 We will explain here how to use it with and without Upstride API. 
 
-Feel free to reach out to us at hello@upstride.io if you're interested in trying this script powered by Upstride technology 🚀
+If you're interested in trying this script powered by Upstride technology 🚀 feel free to reach out to us at hello@upstride.io
 
 
 ## How do I get set up?
