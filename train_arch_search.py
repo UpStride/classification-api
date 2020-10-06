@@ -8,9 +8,10 @@ import math
 import os
 import tensorflow as tf
 import upstride_argparse as argparse
-from src.argument_parser import training_arguments_no_keras_tuner, training_arguments_das
+from src.argument_parser import training_arguments_das
 from src.data import dataloader
 from src.models import model_name_to_class
+from src.models.generic_model import framework_list
 from src.utils import check_folder, get_imagenet_data, model_dir
 from submodules.global_dl import global_conf
 from submodules.global_dl.training.training import create_env_directories, setup_mp, define_model_in_strategy, get_callbacks, init_custom_checkpoint_callbacks
@@ -30,7 +31,9 @@ arguments = [
     [int, "factor", 1, 'division factor to scale the number of channel. factor=2 means the model will have half the number of channels compare to default implementation'],
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture'],
-] + global_conf.arguments + training.arguments + training_arguments_no_keras_tuner + training_arguments_das
+    [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
+    [str, 'framework', 'tensorflow', 'Framework to use to define the model', lambda x: x in framework_list],
+] + global_conf.arguments + training.arguments +  training_arguments_das
 
 
 def exponential_decay(initial_value, decay_steps, decay_rate, ):
