@@ -2,7 +2,7 @@ import tensorflow as tf
 
 framework_list = [
     "tensorflow",
-    "upstride_real",
+    "upstride_type0",
     "upstride_type1",
     "upstride_type2",
     "upstride_type3",
@@ -22,8 +22,8 @@ class Layer:
     self.framework = framework
 
     if framework != "tensorflow":
-      if "real" in framework:
-        import upstride.real.tf.keras.layers as up_layers
+      if "0" in framework:
+        import upstride.type0.tf.keras.layers as up_layers
         self.up_layers = up_layers
       if "1" in framework:
         import upstride.type1.tf.keras.layers as up_layers
