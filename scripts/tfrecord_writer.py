@@ -1,4 +1,7 @@
 """
+README: Before invoking this file directly ensure the classification-api directory is added to the python path
+`export PYTHONPATH=$PYTHONPATH:<path>/classification-api`
+
 This script prepares a classification dataset for efficient tensorflow training by creating train/validation/test split
 based on their split percentages of the whole data
 
