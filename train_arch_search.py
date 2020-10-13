@@ -10,6 +10,7 @@ import tensorflow as tf
 import upstride_argparse as argparse
 from src.argument_parser import training_arguments_das
 from src.data import dataloader
+from src import losses
 from src.models import model_name_to_class
 from src.models.generic_model import framework_list
 from src.utils import check_folder, get_imagenet_data, model_dir
@@ -36,7 +37,7 @@ arguments = [
 ] + global_conf.arguments + training.arguments +  training_arguments_das
 
 
-def exponential_decay(initial_value, decay_steps, decay_rate, ):
+def exponential_decay(initial_value, decay_steps, decay_rate):
     """
             Applies exponential decay to initial value
          Args:
@@ -105,7 +106,7 @@ def train(args):
     train_arch_dataset = dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['train_list'],
                                            num_classes=args["num_classes"], split='train_arch')
     val_dataset = dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['val_list'],
-                                         num_classes=args["num_classes"], split='validation')
+                                         num_classes=args["num_classes"], split='test')
 
     setup_mp(args)
 
@@ -128,11 +129,17 @@ def train(args):
                               alpha=args["optimizer"]["lr_decay_strategy"]["lr_params"]["alpha"],
                               total_epochs=args['num_epochs'])
 
+    lr_decay_fn_arch = CosineDecay(args['arch_optimizer_param']['lr'],
+                              alpha=0.000001,
+                              total_epochs=args['num_epochs'])
+
     loss_fn = CategoricalCrossentropy()
-    accuracy_metric = CategoricalAccuracy()
-    loss_metric = Mean()
+    train_accuracy_metric = CategoricalAccuracy()
+    total_loss_metric = Mean()
+    train_cross_entropy_loss_metric = Mean()
     val_accuracy_metric = CategoricalAccuracy()
-    val_loss_metric = Mean()
+    val_cross_entropy_loss_metric = Mean()
+    latency_reg_loss_metric = Mean()
 
     train_log_dir = os.path.join(args['log_dir'], 'train')
     val_log_dir = os.path.join(args['log_dir'], 'validation')
@@ -143,22 +150,34 @@ def train(args):
     def train_step(x_batch, y_batch):
         with tf.GradientTape() as tape:
             y_hat = model(x_batch, training=True)
-            loss = loss_fn(y_batch, y_hat)
+            cross_entropy_loss = loss_fn(y_batch, y_hat)
+            weght_reg_loss = tf.add_n([tf.nn.l2_loss(w) for w in weights if 'bias' not in w.name])
+            total_loss = cross_entropy_loss + args['weight_decay'] * weght_reg_loss
 
-        accuracy_metric.update_state(y_batch, y_hat)
-        loss_metric.update_state(loss)
-        grads = tape.gradient(loss, weights)
+        train_accuracy_metric.update_state(y_batch, y_hat)
+        train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
+        total_loss_metric.update_state(total_loss)
+
+        # Update the weights
+        grads = tape.gradient(total_loss, weights)
         weight_opt.apply_gradients(zip(grads, weights))
 
     @tf.function
     def train_step_arch(x_batch, y_batch):
         with tf.GradientTape() as tape:
             y_hat = model(x_batch, training=False)
-            loss = loss_fn(y_batch, y_hat)
+            cross_entropy_loss = loss_fn(y_batch, y_hat)
+            weght_reg_loss = tf.add_n([tf.nn.l2_loss(w) for w in arch_params if 'bias' not in w.name])
+            latency_reg_loss = losses.parameters_loss(model) / 1.0e6
+            total_loss = cross_entropy_loss + args['arch_param_decay'] * weght_reg_loss + latency_reg_loss
 
-        accuracy_metric.update_state(y_batch, y_hat)
-        loss_metric.update_state(loss)
-        grads = tape.gradient(loss, arch_params)
+        latency_reg_loss_metric.update_state(latency_reg_loss)
+        train_accuracy_metric.update_state(y_batch, y_hat)
+        train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
+        total_loss_metric.update_state(total_loss)
+
+        # Update trhe architecturte paramaters
+        grads = tape.gradient(total_loss, arch_params)
         arch_opt.apply_gradients(zip(grads, arch_params))
 
     @tf.function
@@ -167,12 +186,13 @@ def train(args):
         loss = loss_fn(y_batch, y_hat)
 
         val_accuracy_metric.update_state(y_batch, y_hat)
-        val_loss_metric.update_state(loss)
+        val_cross_entropy_loss_metric.update_state(loss)
 
     for epoch in range(latest_epoch, args['num_epochs']):
         print(f'Epoch: {epoch}/{args["num_epochs"]}')
 
         weight_opt.learning_rate = lr_decay_fn(epoch)
+        arch_opt.learning_rate = lr_decay_fn_arch(epoch)
 
         # Updating the weight parameters using a subset of the training data
         for step, (x_batch, y_batch) in tqdm.tqdm(enumerate(train_weight_dataset, start=1)):
@@ -182,34 +202,38 @@ def train(args):
         for x_batch, y_batch in val_dataset:
             evaluation_step(x_batch, y_batch)
 
-        train_accuracy = accuracy_metric.result()
-        train_loss = loss_metric.result()
+        train_accuracy = train_accuracy_metric.result()
+        train_cross_entropy_loss = train_cross_entropy_loss_metric.result()
+        train_total_loss = total_loss_metric.result()
         val_accuracy = val_accuracy_metric.result()
-        val_loss = val_loss_metric.result()
+        val_cross_entropy_loss = val_cross_entropy_loss_metric.result()
 
-        template = f'Weights updated, Epoch {epoch}, Train Loss: {float(train_loss)}, Train Accuracy: ' \
-            f'{float(train_accuracy)}, Val Loss: {float(val_loss)}, Val Accuracy: {float(val_accuracy)}, ' \
-            f'lr: {float(weight_opt.learning_rate)}'
+        template = f'Weights updated, Epoch {epoch}, Train total Loss: {float(train_total_loss)}, ' \
+            f'Train Cross Entropy Loss: {float(train_cross_entropy_loss)}, ' \
+            f'Train Accuracy: {float(train_accuracy)} Val Loss: {float(val_cross_entropy_loss)}, ' \
+            f'Val Accuracy: {float(val_accuracy)}, lr: {float(weight_opt.learning_rate)}'
         print(template)
 
         new_temperature = temperature_decay_fn(epoch)
 
         with train_summary_writer.as_default():
-            tf.summary.scalar('loss', train_loss, step=epoch)
+            tf.summary.scalar('total loss', train_total_loss, step=epoch)
+            tf.summary.scalar('cross entropy loss', train_cross_entropy_loss, step=epoch)
             tf.summary.scalar('accuracy', train_accuracy, step=epoch)
             tf.summary.scalar('temperature', new_temperature, step=epoch)
 
         with val_summary_writer.as_default():
-            tf.summary.scalar('loss', val_loss, step=epoch)
+            tf.summary.scalar('cross entropy loss', val_cross_entropy_loss, step=epoch)
             tf.summary.scalar('accuracy', val_accuracy, step=epoch)
 
         # Resetting metrices for reuse
-        accuracy_metric.reset_states()
-        loss_metric.reset_states()
+        train_accuracy_metric.reset_states()
+        train_cross_entropy_loss_metric.reset_states()
+        total_loss_metric.reset_states()
         val_accuracy_metric.reset_states()
-        val_loss_metric.reset_states()
+        val_cross_entropy_loss_metric.reset_states()
 
-        if epoch >= 10:
+        if epoch >= args['num_warmup']:
             # Updating the architectural parameters on another subset
             for step, (x_batch, y_batch) in tqdm.tqdm(enumerate(train_arch_dataset, start=1)):
                 train_step_arch(x_batch, y_batch)
@@ -218,27 +242,34 @@ def train(args):
             for x_batch, y_batch in val_dataset:
                 evaluation_step(x_batch, y_batch)
 
-            train_accuracy = accuracy_metric.result()
-            train_loss = loss_metric.result()
+            train_accuracy = train_accuracy_metric.result()
+            train_total_loss = total_loss_metric.result()
+            train_cross_entropy_loss = train_cross_entropy_loss_metric.result()
             val_accuracy = val_accuracy_metric.result()
-            val_loss = val_loss_metric.result()
+            val_loss = val_cross_entropy_loss_metric.result()
+            latency_reg_loss = latency_reg_loss_metric.result()
 
-            template = f'Arch params updated, Epoch {epoch}, Train Loss: {float(train_loss)}, Train Accuracy: ' \
-                f'{float(train_accuracy)}, Val Loss: {float(val_loss)}, Val Accuracy: {float(val_accuracy)}'
+            template = f'Weights updated, Epoch {epoch}, Train total Loss: {float(train_total_loss)}, ' \
+            f'Train Cross Entropy Loss: {float(train_cross_entropy_loss)}, ' \
+            f'Train Accuracy: {float(train_accuracy)} Val Loss: {float(val_loss)}, Val Accuracy: {float(val_accuracy)}, ' \
+            f'reg_loss: {float(latency_reg_loss)}'
             print(template)
             with train_summary_writer.as_default():
-                tf.summary.scalar('loss_after_arch_params_update', train_loss, step=epoch)
+                tf.summary.scalar('total_loss_after_arch_params_update', train_total_loss, step=epoch)
+                tf.summary.scalar('cross_entropy_loss_after_arch_params_update', train_cross_entropy_loss, step=epoch)
                 tf.summary.scalar('accuracy_after_arch_params_update', train_accuracy, step=epoch)
+                tf.summary.scalar('latency_reg_loss', latency_reg_loss, step=epoch)
 
             with val_summary_writer.as_default():
-                tf.summary.scalar('loss_after_arch_params_update', val_loss, step=epoch)
+                tf.summary.scalar('total_loss_after_arch_params_update', val_loss, step=epoch)
                 tf.summary.scalar('accuracy_after_arch_params_update', val_accuracy, step=epoch)
 
             # Resetting metrices for reuse
-            accuracy_metric.reset_states()
-            loss_metric.reset_states()
+            train_accuracy_metric.reset_states()
+            train_cross_entropy_loss_metric.reset_states()
+            total_loss_metric.reset_states()
             val_accuracy_metric.reset_states()
-            val_loss_metric.reset_states()
+            val_cross_entropy_loss_metric.reset_states()
 
         define_temperature(new_temperature)
 

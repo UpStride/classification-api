@@ -10,3 +10,4 @@ rabbitmq_conf.yml
 .vscode
 inference_config
 .stfolder
+.ipynb_checkpoints
