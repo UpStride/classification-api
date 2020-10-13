@@ -79,20 +79,64 @@ def get_experiment_name(args):
   return experiment_dir
 
 
-def post_training_analysis(model, saved_file_path):
-  layer_name = ''
-  saved_file_content = {}
-  for layer in model.layers:
-    # if type(layer) == tf.keras.Conv2D:
-    #     layer_name = layer.name
-    if type(layer) == ChannelMasking and layer.name[-8:] == '_savable':
-      layer_name = layer.name[:-8]
-      max_alpha_id = int(tf.math.argmax(layer.alpha).numpy())
-      value = layer.min + max_alpha_id * layer.step
-      saved_file_content[layer_name] = value
-  print(saved_file_content)
-  with open(saved_file_path, 'w') as f:
-    yaml.dump(saved_file_content, f)
+def get_train_step_function(model, weights, weight_opt, metrics):
+  train_accuracy_metric = metrics['train_accuracy']
+  train_cross_entropy_loss_metric = metrics['train_cross_entropy_loss']
+  train_total_loss_metric = metrics['train_total_loss']
+
+  @tf.function
+  def train_step(x_batch, y_batch):
+    with tf.GradientTape() as tape:
+      y_hat = model(x_batch, training=True)
+      cross_entropy_loss = tf.reduce_mean(tf.keras.losses.categorical_crossentropy(y_batch, y_hat))
+      # TODO not sure of this computation. I think we should use model.losses to get the internal losses (l2) Doing this will allow the user to define both L1 and L2 reg in the model
+      weight_reg_loss = tf.add_n([tf.nn.l2_loss(w) for w in weights if 'bias' not in w.name])
+      total_loss = cross_entropy_loss + args['weight_decay'] * weight_reg_loss
+    train_accuracy_metric.update_state(y_batch, y_hat)
+    train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
+    train_total_loss_metric.update_state(total_loss)
+    # Update the weights
+    grads = tape.gradient(total_loss, weights)
+    weight_opt.apply_gradients(zip(grads, weights))
+  return train_step
+
+
+def get_train_step_arch_function(model, arch_params, arch_opt, metrics):
+  latency_reg_loss_metric = metrics['arch_latency_reg_loss']
+  train_accuracy_metric = metrics['train_accuracy']
+  train_cross_entropy_loss_metric = metrics['train_cross_entropy_loss']
+  total_loss_metric = metrics['train_total_loss']
+
+  @tf.function
+  def train_step_arch(x_batch, y_batch):
+    with tf.GradientTape() as tape:
+      y_hat = model(x_batch, training=False)
+      cross_entropy_loss = tf.reduce_mean(tf.keras.losses.categorical_crossentropy(y_batch, y_hat))
+      # TODO do we want L2 reg for arch parameters ?
+      weight_reg_loss = tf.add_n([tf.nn.l2_loss(w) for w in arch_params if 'bias' not in w.name])
+      latency_reg_loss = losses.parameters_loss(model) / 1.0e6
+      total_loss = cross_entropy_loss + args['arch_param_decay'] * weight_reg_loss + latency_reg_loss
+    latency_reg_loss_metric.update_state(latency_reg_loss)
+    train_accuracy_metric.update_state(y_batch, y_hat)
+    train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
+    total_loss_metric.update_state(total_loss)
+    # Update the architecture paramaters
+    grads = tape.gradient(total_loss, arch_params)
+    arch_opt.apply_gradients(zip(grads, arch_params))
+  return train_step_arch
+
+
+def get_eval_step_function(model, metrics):
+  val_accuracy_metric = metrics['val_accuracy']
+  val_cross_entropy_loss_metric = metrics['val_cross_entropy_loss']
+
+  @tf.function
+  def evaluation_step(x_batch, y_batch):
+    y_hat = model(x_batch, training=False)
+    loss = loss_fn(y_batch, y_hat)
+    val_accuracy_metric.update_state(y_batch, y_hat)
+    val_cross_entropy_loss_metric.update_state(loss)
+  return evaluation_step
 
 
 def train(args):
@@ -132,60 +176,18 @@ def train(args):
                                  alpha=0.000001,
                                  total_epochs=args['num_epochs'])
 
-  loss_fn = CategoricalCrossentropy()
-  train_accuracy_metric = CategoricalAccuracy()
-  total_loss_metric = Mean()
-  train_cross_entropy_loss_metric = Mean()
-  val_accuracy_metric = CategoricalAccuracy()
-  val_cross_entropy_loss_metric = Mean()
-  latency_reg_loss_metric = Mean()
+  metrics = {
+      'arch_latency_reg_loss': tf.keras.metrics.Mean()
+      'train_total_loss': tf.keras.metrics.Mean(),
+      'train_accuracy': tf.keras.metrics.CategoricalAccuracy(),
+      'train_cross_entropy_loss': tf.keras.metrics.Mean(),
+      'val_accuracy': tf.keras.metrics.CategoricalAccuracy(),
+      'val_cross_entropy_loss': tf.keras.metrics.Mean(),
+  }
 
-  train_log_dir = os.path.join(log_dir, 'train')
-  val_log_dir = os.path.join(log_dir, 'validation')
-  train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-  val_summary_writer = tf.summary.create_file_writer(val_log_dir)
-
-  @tf.function
-  def train_step(x_batch, y_batch):
-    with tf.GradientTape() as tape:
-      y_hat = model(x_batch, training=True)
-      cross_entropy_loss = loss_fn(y_batch, y_hat)
-      weght_reg_loss = tf.add_n([tf.nn.l2_loss(w) for w in weights if 'bias' not in w.name])
-      total_loss = cross_entropy_loss + args['weight_decay'] * weght_reg_loss
-
-    train_accuracy_metric.update_state(y_batch, y_hat)
-    train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
-    total_loss_metric.update_state(total_loss)
-
-    # Update the weights
-    grads = tape.gradient(total_loss, weights)
-    weight_opt.apply_gradients(zip(grads, weights))
-
-  @tf.function
-  def train_step_arch(x_batch, y_batch):
-    with tf.GradientTape() as tape:
-      y_hat = model(x_batch, training=False)
-      cross_entropy_loss = loss_fn(y_batch, y_hat)
-      weght_reg_loss = tf.add_n([tf.nn.l2_loss(w) for w in arch_params if 'bias' not in w.name])
-      latency_reg_loss = losses.parameters_loss(model) / 1.0e6
-      total_loss = cross_entropy_loss + args['arch_param_decay'] * weght_reg_loss + latency_reg_loss
-
-    latency_reg_loss_metric.update_state(latency_reg_loss)
-    train_accuracy_metric.update_state(y_batch, y_hat)
-    train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
-    total_loss_metric.update_state(total_loss)
-
-    # Update trhe architecturte paramaters
-    grads = tape.gradient(total_loss, arch_params)
-    arch_opt.apply_gradients(zip(grads, arch_params))
-
-  @tf.function
-  def evaluation_step(x_batch, y_batch):
-    y_hat = model(x_batch, training=False)
-    loss = loss_fn(y_batch, y_hat)
-
-    val_accuracy_metric.update_state(y_batch, y_hat)
-    val_cross_entropy_loss_metric.update_state(loss)
+  train_step = get_train_step_function(model, weights, weight_opt, metrics)
+  train_step_arch = get_train_step_arch_function(model, arch_params, arch_opt, metrics)
+  evaluation_step = get_eval_step_function(model, metrics)
 
   for epoch in range(latest_epoch, args['num_epochs']):
     print(f'Epoch: {epoch}/{args["num_epochs"]}')
