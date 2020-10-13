@@ -3,6 +3,7 @@ import unittest
 from src.data.test_augmentations import TestAugmentations
 from src.data.test_dataloader import TestDataLoader
 from src.test_losses import TestLosses
+from src.models.test_fbnetv2 import *
 
 # from src.test_utils import TestUtils
 # from src.models.test_generic_model import TestModel1 # TestLayer
