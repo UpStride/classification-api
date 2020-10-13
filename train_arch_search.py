@@ -140,8 +140,8 @@ def train(args):
   val_cross_entropy_loss_metric = Mean()
   latency_reg_loss_metric = Mean()
 
-  train_log_dir = os.path.join(args['log_dir'], 'train')
-  val_log_dir = os.path.join(args['log_dir'], 'validation')
+  train_log_dir = os.path.join(log_dir, 'train')
+  val_log_dir = os.path.join(log_dir, 'validation')
   train_summary_writer = tf.summary.create_file_writer(train_log_dir)
   val_summary_writer = tf.summary.create_file_writer(val_log_dir)
 
