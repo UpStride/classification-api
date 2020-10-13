@@ -11,3 +11,4 @@ rabbitmq_conf.yml
 inference_config
 .stfolder
 .ipynb_checkpoints
+configs
