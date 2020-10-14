@@ -1,10 +1,8 @@
 import unittest
-import shutil 
-import tempfile
-import yaml
 import tensorflow as tf
 import numpy as np
 from . import fbnetv2
+import scipy.stats as ss
 
 
 class TestBinaryVector(unittest.TestCase):
@@ -67,48 +65,81 @@ class TestChannelMasking(unittest.TestCase):
     self.assertAlmostEqual(components.numpy()[3], 1/3)
     self.assertAlmostEqual(components.numpy()[4], 1/3)
     
-class TestExponentialDecay(unittest.TestCase):
-  def non_increasing(self, decay):
-    """Checks if all the function provided are non increasing over a range
+class TestSplitTtrainableWeights(unittest.TestCase):
+  def test_split_trainable_weights(self):
+    layer0 = tf.keras.layers.Input((32, 32, 3))
+    layer1 = tf.keras.layers.Conv2D(8, kernel_size=3, strides=1, padding='same')
+    layer2 = fbnetv2.ChannelMasking(2, 8, 2, 'abc', gumble_noise=False)
+    model = tf.keras.Sequential([layer0, layer1, layer2])
 
-    Args:
-        decay (instance): Instance of the decay to be tested
+    weights, arch_params = fbnetv2.split_trainable_weights(model)
 
-    Returns:
-        bool : Compares ith and i + 1st element of the value_list
-        returns True if all i >= i+1 else False
-    """
-    value_list = [decay(i) for i in range(1,100)]
-    return all([i >= j for i, j in zip(value_list, value_list[1:])])
+    true_total_weight_param = 3*3*3*8+8
+    true_total_arch_param = len(range(2, 8+1, 2))
 
-  def test_exponential_decay(self):
-    decay = fbnetv2.exponential_decay(5, 1, 0.956)
+    # calculate number of weight params returned by  the function
+    total_weight_params = 0
+    for w in weights:
+      total_weight_params += np.prod(w.shape.as_list())
 
-    self.assertEqual(decay(0), 5)  
-    self.assertAlmostEqual(decay(10), 3.188,places=3)
+    # calculate number of architecture params returned by  the function
+    total_arch_params = 0
+    for p in arch_params:
+      total_arch_params += np.prod(p.shape.as_list())
 
-    # test function is not increasing over number of epochs
-    self.assertTrue(self.non_increasing(decay), True)
+    self.assertEqual(total_arch_params, true_total_arch_param)
+    self.assertEqual(total_weight_params, true_total_weight_param)
+    self.assertEqual(total_weight_params+total_arch_params, true_total_weight_param+true_total_arch_param)
 
-    # Negative test to ensure decay rate greater than 1 is increasing
-    decay = fbnetv2.exponential_decay(5, 1, 1.1)
-    self.assertFalse(self.non_increasing(decay), False)
+  def test_not_arch_params(self):
+    layer0 = tf.keras.layers.Input((32, 32, 3))
+    layer1 = tf.keras.layers.Conv2D(8, kernel_size=3, strides=1, padding='same')
+    model = tf.keras.Sequential([layer0, layer1])
 
-class TestPostTrainingAnalysis(unittest.TestCase):
-  def test_post_training_anaysis(self):
-    cm1 = fbnetv2.ChannelMasking(1, 5, 2, 'toto_1_savable', gumble_noise=False)
-    cm2 = fbnetv2.ChannelMasking(8, 16, 4, 'toto_2_savable', gumble_noise=False)
-    model = tf.keras.Sequential(
-      [tf.keras.layers.Conv2D(5, (3, 3), padding='same', use_bias=False), 
-      cm1,
-      tf.keras.layers.Conv2D(16, (3, 3), padding='same', use_bias=False), 
-      cm2,
-      ])
-    model(tf.zeros((1, 24, 24, 3), dtype=tf.float32)) # build is called here
-    tmpdir = tempfile.mkdtemp() 
-    tmpfile = tmpdir + "/test.yaml"
-    fbnetv2.post_training_analysis(model,tmpfile)
-    with open(tmpfile, 'r') as f:
-      read = yaml.safe_load(f)
-    self.assertDictEqual({"toto_1": 1, "toto_2": 8}, read)
-    shutil.rmtree(tmpdir)
+    # check if it raises error when there is no architectural parameters by the name 'alpha'
+    self.assertRaises(ValueError, fbnetv2.split_trainable_weights, model, arch_params_name='alpha')
+
+class TestGumbelSoftmax(unittest.TestCase):
+  def testSampling(self):
+    fbnetv2.define_temperature(5.)
+    noise = 0.0001
+    logits = tf.constant([-1., 0.5, 1.])
+
+    g = fbnetv2.gumbel_softmax(logits, gumble_noise=False)
+
+    self.assertEqual(logits.shape.as_list(), g.shape.as_list())
+    self.assertEqual(g.numpy().mean(), 1.0)
+    self.assertSequenceEqual(g.numpy().tolist(), tf.math.softmax((logits+noise)/5.).numpy().tolist())
+
+  def testUniformLikeDist(self):
+    # set temperature values to high to see Uniform like distribution
+    fbnetv2.define_temperature(5.0)
+    logits = tf.constant([-2., 2., -2.5, -2.])
+
+    g = fbnetv2.gumbel_softmax(logits, gumble_noise=False)
+
+    # Test the distribution using Kolmogorove-Smirnov test as 
+    # described here (https://stackoverflow.com/questions/22392562/how-can-check-the-distribution-of-a-variable-in-python)
+
+    _, p = ss.kstest(g.numpy(), ss.uniform.cdf)
+
+    th = 0.05
+
+    # Check the significance, if the signifncace are higher than threshold(th), we can assume it to be uniform
+    self.assertGreater(p, th)
+
+  def testOnehotLikeDist(self):
+    # set temperature values to high to see Onehot like distribution
+    fbnetv2.define_temperature(0.00001)
+    logits = tf.constant([-2., 2., -2.5, -2.])
+
+    g = fbnetv2.gumbel_softmax(logits, gumble_noise=False)
+
+    _, p = ss.kstest(g.numpy(), ss.uniform.cdf)
+
+    th = 0.05
+
+    # Check the significance, if the signifncace are lesser than threshold(th), 
+    # we can assume it to be not uniform thus onhot
+    self.assertLess(p, th)
+  
