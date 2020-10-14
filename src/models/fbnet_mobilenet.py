@@ -24,10 +24,10 @@ class _FBNet_MobileNetV2(GenericModel):
           self.model_def = yaml.safe_load(f)
       else:
         raise FileNotFoundError(f"{self.load_searched_arch} incorrect, check the path")
-      assert all([k1 == k2 for k1, k2 in zip(self.model_def['channels'].keys(), self.mapping['channels'].keys())]), "keys are not the same"
-      for (k1, v1), (k2, v2) in zip(self.model_def['channels'].items(), self.mapping['channels'].items()):
+      assert all([k1 == k2 for k1, k2 in zip(self.model_def.keys(), self.mapping.keys())]), "keys are not the same"
+      for (k1, v1), (k2, v2) in zip(self.model_def.items(), self.mapping.items()):
           if k1 == k2:
-            self.mapping['channels'][k2][0] = v1
+            self.mapping[k2][0] = v1
 
     # init of super class need to be called at the end of this init because it calls model(), so everything need to be ready before
     super().__init__(*args, **kwargs)
@@ -103,20 +103,20 @@ class _FBNet_MobileNetV2(GenericModel):
     # first_block_filters = _make_divisible(16, 8)
     self.x = self.layers().ZeroPadding2D(padding=correct_pad(self.x, 3), name='Conv1_pad')(self.x)
 
-    first_block_filters = self.mapping['channels']['conv2d_1']
+    first_block_filters = self.mapping['conv2d_01']
     if not self.load_searched_arch:
-      self.x = self.layers().Conv2D(first_block_filters[0][1], kernel_size=3, strides=2, padding='valid', use_bias=False, name='Conv2d_1')(self.x)
-      self.x = ChannelMasking(*first_block_filters[0], name='conv2d_1_savable')(self.x)
+      self.x = self.layers().Conv2D(first_block_filters[0][1], kernel_size=3, strides=2, padding='valid', use_bias=False, name='Conv2d_01')(self.x)
+      self.x = ChannelMasking(*first_block_filters[0], name='conv2d_01_savable')(self.x)
       self.last_block_output_shape = first_block_filters[0][1]
     else:
-      self.x = self.layers().Conv2D(first_block_filters, kernel_size=3, strides=2, padding='valid', use_bias=False, name='Conv2d_1')(self.x)
-      self.last_block_output_shape = first_block_filters
+      self.x = self.layers().Conv2D(first_block_filters[0], kernel_size=3, strides=2, padding='valid', use_bias=False, name='Conv2d_01')(self.x)
+      self.last_block_output_shape = first_block_filters[0]
     self.x = self.layers().BatchNormalization(epsilon=1e-3, momentum=0.999)(self.x)
     self.x = self.layers().ReLU(6.)(self.x)
     
 
     # Inverted residuals
-    for k, v in self.mapping['channels'].items():
+    for k, v in self.mapping.items():
       if k.split('_')[0] == 'irb':  # ignore conv2d for now
         self._inverted_res_block(filters=v[0], stride=v[1], expansion=v[2], name=k)
 
@@ -147,18 +147,17 @@ class FBNet_MobileNetV2NCHW(_FBNet_MobileNetV2):
 class FBNet_MobileNetV2CIFAR(_FBNet_MobileNetV2):
   def __init__(self, *args, **kwargs):
     self.mapping = {
-      'channels': {
         # filter_range,  Stride,  expansion
-        'conv2d_1': [(8, 16, 4),  1,        1],
-        'irb_1': [(12, 16, 4),    1,        1],
-        'irb_2': [(16, 24, 4),    1,        6],
-        'irb_3': [(16, 24, 4),    1,        6],
-        'irb_4': [(16, 24, 4),    1,        6],
-        'irb_5': [(16, 40, 8),    1,        6],
-        'irb_6': [(16, 40, 8),    1,        6],
-        'irb_7': [(16, 40, 8),    1,        6],
-        'irb_8': [(48, 80, 8),    1,        6],
-        'irb_9': [(48, 80, 8),    1,        6],
+        'conv2d_01': [(8, 16, 4),  1,        1],
+        'irb_01': [(12, 16, 4),    1,        1],
+        'irb_02': [(16, 24, 4),    1,        6],
+        'irb_03': [(16, 24, 4),    1,        6],
+        'irb_04': [(16, 24, 4),    1,        6],
+        'irb_05': [(16, 40, 8),    1,        6],
+        'irb_06': [(16, 40, 8),    1,        6],
+        'irb_07': [(16, 40, 8),    1,        6],
+        'irb_08': [(48, 80, 8),    1,        6],
+        'irb_09': [(48, 80, 8),    1,        6],
         'irb_10': [(48, 80, 8),   1,        6],
         'irb_11': [(72, 112, 8),  1,        6],
         'irb_12': [(72, 112, 8),  1,        6],
@@ -169,25 +168,23 @@ class FBNet_MobileNetV2CIFAR(_FBNet_MobileNetV2):
         'irb_17': [(112, 184, 8), 1,        6],
         # 'conv2d_2': [1984,         1,        1],
       }
-    }
     super().__init__(*args, **kwargs)
 
 
 class FBNet_MobileNetV2CIFARUP(_FBNet_MobileNetV2):
   def __init__(self, *args, **kwargs):
     self.mapping = {
-      'channels': {
         # filter_range,  Stride,  expansion
-        'conv2d_1': [(4, 16, 4),  1,        1],
-        'irb_1': [(4, 8, 4),    1,        1],
-        'irb_2': [(4, 12, 4),    1,        6],
-        'irb_3': [(4, 12, 4),    1,        6],
-        'irb_4': [(4, 16, 4),    2,        6],
-        'irb_5': [(4, 16, 4),    1,        6],
-        'irb_6': [(4, 16, 4),    1,        6],
-        'irb_7': [(8, 32, 4),    2,        6],
-        'irb_8': [(8, 32, 4),    1,        6],
-        'irb_9': [(8, 32, 4),    1,        6],
+        'conv2d_01': [(4, 16, 4),  1,        1],
+        'irb_01': [(4, 8, 4),    1,        1],
+        'irb_02': [(4, 12, 4),    1,        6],
+        'irb_03': [(4, 12, 4),    1,        6],
+        'irb_04': [(4, 16, 4),    2,        6],
+        'irb_05': [(4, 16, 4),    1,        6],
+        'irb_06': [(4, 16, 4),    1,        6],
+        'irb_07': [(8, 32, 4),    2,        6],
+        'irb_08': [(8, 32, 4),    1,        6],
+        'irb_09': [(8, 32, 4),    1,        6],
         'irb_10': [(8, 32, 4),   1,        6],
         'irb_11': [(12, 48, 4),  1,        6],
         'irb_12': [(12, 48, 4),  1,        6],
@@ -198,24 +195,22 @@ class FBNet_MobileNetV2CIFARUP(_FBNet_MobileNetV2):
         'irb_17': [(40, 160, 8), 1,        6],
         # 'conv2d_2': [1984,         1,        1],
       }
-    }
     super().__init__(*args, **kwargs)
 
 class FBNet_MobileNetV2Imagenet(_FBNet_MobileNetV2):
   def __init__(self, *args, **kwargs):
     self.mapping = {
-      'channels': {
         # filter_range,  Stride,  expansion
-        'conv2d_1': [(8, 16, 4),  2,        1],
-        'irb_1': [(12, 16, 4),    1,        1],
-        'irb_2': [(16, 24, 4),    2,        6],
-        'irb_3': [(16, 24, 4),    1,        6],
-        'irb_4': [(16, 24, 4),    1,        6],
-        'irb_5': [(16, 40, 8),    2,        6],
-        'irb_6': [(16, 40, 8),    1,        6],
-        'irb_7': [(16, 40, 8),    1,        6],
-        'irb_8': [(48, 80, 8),    2,        6],
-        'irb_9': [(48, 80, 8),    1,        6],
+        'conv2d_01': [(8, 16, 4),  2,        1],
+        'irb_01': [(12, 16, 4),    1,        1],
+        'irb_02': [(16, 24, 4),    2,        6],
+        'irb_03': [(16, 24, 4),    1,        6],
+        'irb_04': [(16, 24, 4),    1,        6],
+        'irb_05': [(16, 40, 8),    2,        6],
+        'irb_06': [(16, 40, 8),    1,        6],
+        'irb_07': [(16, 40, 8),    1,        6],
+        'irb_08': [(48, 80, 8),    2,        6],
+        'irb_09': [(48, 80, 8),    1,        6],
         'irb_10': [(48, 80, 8),   1,        6],
         'irb_11': [(72, 112, 8),  1,        6],
         'irb_12': [(72, 112, 8),  1,        6],
@@ -226,5 +221,4 @@ class FBNet_MobileNetV2Imagenet(_FBNet_MobileNetV2):
         'irb_17': [(112, 184, 8), 1,        6],
         # 'conv2d_2': [1984,         1,        1],
       }
-    }
     super().__init__(*args, **kwargs)
