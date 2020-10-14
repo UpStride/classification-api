@@ -1,5 +1,6 @@
 import unittest
-import os
+import shutil 
+import tempfile
 import yaml
 import tensorflow as tf
 import numpy as np
@@ -68,7 +69,7 @@ class TestChannelMasking(unittest.TestCase):
     
 class TestExponentialDecay(unittest.TestCase):
   def non_increasing(self, decay):
-    """Checks if all the learning rates are non increasing over the total epochs
+    """Checks if all the function provided are non increasing over a range
 
     Args:
         decay (instance): Instance of the decay to be tested
@@ -104,9 +105,10 @@ class TestPostTrainingAnalysis(unittest.TestCase):
       cm2,
       ])
     model(tf.zeros((1, 24, 24, 3), dtype=tf.float32)) # build is called here
-    open('test.yaml','w').close()
-    fbnetv2.post_training_analysis(model,'test.yaml')
-    with open('test.yaml', 'r') as f:
+    tmpdir = tempfile.mkdtemp() 
+    tmpfile = tmpdir + "/test.yaml"
+    fbnetv2.post_training_analysis(model,tmpfile)
+    with open(tmpfile, 'r') as f:
       read = yaml.safe_load(f)
     self.assertDictEqual({"toto_1": 1, "toto_2": 8}, read)
-    os.remove('test.yaml')
+    shutil.rmtree(tmpdir)
