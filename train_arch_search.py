@@ -202,7 +202,7 @@ def train(args):
     print(template)
 
     new_temperature = temperature_decay_fn(epoch)
-    with train_summary_writer.as_default():
+    with summary_writers['train'].as_default():
       tf.summary.scalar('temperature', new_temperature, step=epoch)
     define_temperature(new_temperature)
 

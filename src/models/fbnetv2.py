@@ -10,7 +10,6 @@ def define_temperature(new_temperature):
   global temperature
   temperature = new_temperature
 
-# TODO Seb unittest
 def create_binary_vector(channel_sizes: List[int], dtype) -> List[tf.Tensor]:
   """this function return a list of vector with ones at the beginning and zeros at the end
   it uses numpy because there is no reason for these operations to be inside the tensorflow graph.
@@ -44,7 +43,6 @@ def gumbel_softmax(logits, gumble_noise=True):
   return tf.math.softmax(noisy_logits)
 
 
-# TODO Seb unittest
 def get_mask(binary_vectors: List[tf.Tensor], g: List[float]):
   vectors = [g[i] * binary_vectors[i] for i in range(len(g))]
   vectors = tf.stack(vectors, axis=0)
@@ -52,7 +50,6 @@ def get_mask(binary_vectors: List[tf.Tensor], g: List[float]):
   return vector
 
 
-# TODO Seb unittest
 class ChannelMasking(tf.keras.layers.Layer):
   def __init__(self, min: int, max: int, step: int, name: str, gumble_noise=True):
     super().__init__(name=name)
