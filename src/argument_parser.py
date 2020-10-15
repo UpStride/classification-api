@@ -10,7 +10,7 @@ training_arguments_das = [
         [int, 'decay_steps', 1, 'decay steps']
     ]],
 
-    ['namespace', 'arch_optimizer_param', [
+    ['namespace', 'optimizer', [
         [str, 'name', 'adam', 'optimize to be used for updating architecture parameters for search', lambda x: x.lower() in optimizer_list],
         [float, "lr", 0.1, 'learning rate', lambda x: x > 0],
         [float, 'momentum', 0.9, 'used when optimizer name is specified as sgd_momentum'],
