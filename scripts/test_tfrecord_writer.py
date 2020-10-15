@@ -37,9 +37,9 @@ class TestTfrecordWriter(unittest.TestCase):
     i = 0
     # check split percentage
     for split_name, split_items in dataset_info['splits'].items():
-        num_exmaples = split_items['num_examples']
-        self.assertAlmostEqual(args['data']['split_percentages'][i], num_exmaples / (2.0 * num_examples_each_class))
-        i += 1
+      num_exmaples = split_items['num_examples']
+      self.assertAlmostEqual(args['data']['split_percentages'][i], num_exmaples / (2.0 * num_examples_each_class))
+      i += 1
 
     shutil.rmtree(data_dir)
     shutil.rmtree(tfrecord_dir_path)
@@ -72,9 +72,9 @@ class TestTfrecordWriter(unittest.TestCase):
     i = 0
     # check split percentage
     for split_name, split_items in dataset_info['splits'].items():
-        num_exmaples = split_items['num_examples']
-        self.assertAlmostEqual(args['data']['split_percentages'][i], num_exmaples / (2.0 * num_examples_each_class))
-        i += 1
+      num_exmaples = split_items['num_examples']
+      self.assertAlmostEqual(args['data']['split_percentages'][i], num_exmaples / (2.0 * num_examples_each_class))
+      i += 1
 
     shutil.rmtree(data_dir)
     shutil.rmtree(tfrecord_dir_path)
