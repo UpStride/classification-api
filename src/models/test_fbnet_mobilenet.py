@@ -48,7 +48,7 @@ class TestFBnetMobileNet(unittest.TestCase):
       label_dim=10,
       load_searched_arch=self.file_path).model
     
-    model.summary()
+    # model.summary()
     get_dict = {}
     for layer in model.layers:
       # This type of checking the channels based on the architecture is not ideal.
