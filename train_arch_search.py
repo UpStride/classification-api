@@ -26,12 +26,13 @@ arguments = [
     ['namespace', 'server', alchemy_api.arguments],
     ['namespace', 'optimizer', optimizers.arguments],
     ['namespace', 'export', export.arguments],
+    ['namespace', 'arch_search', training_arguments_das],
     [int, "factor", 1, 'division factor to scale the number of channel. factor=2 means the model will have half the number of channels compare to default implementation'],
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture'],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
     [str, 'framework', 'tensorflow', 'Framework to use to define the model', lambda x: x in framework_list],
-] + global_conf.arguments + training.arguments + training_arguments_das
+] + global_conf.arguments + training.arguments
 
 
 def main():
@@ -51,7 +52,7 @@ def get_experiment_name(args):
   return experiment_dir
 
 
-def get_train_step_function(model, weights, weight_opt, metrics):
+def get_train_step_function(args, model, weights, weight_opt, metrics):
   train_accuracy_metric = metrics['accuracy']
   train_cross_entropy_loss_metric = metrics['cross_entropy_loss']
   train_total_loss_metric = metrics['total_loss']
@@ -61,9 +62,8 @@ def get_train_step_function(model, weights, weight_opt, metrics):
     with tf.GradientTape() as tape:
       y_hat = model(x_batch, training=True)
       cross_entropy_loss = tf.reduce_mean(tf.keras.losses.categorical_crossentropy(y_batch, y_hat))
-      # TODO not sure of this computation. I think we should use model.losses to get the internal losses (l2) Doing this will allow the user to define both L1 and L2 reg in the model
-      weight_reg_loss = tf.add_n([tf.nn.l2_loss(w) for w in weights if 'bias' not in w.name])
-      total_loss = cross_entropy_loss + args['weight_decay'] * weight_reg_loss
+      weight_reg_loss = tf.reduce_sum(model.losses)
+      total_loss = cross_entropy_loss + weight_reg_loss
     train_accuracy_metric.update_state(y_batch, y_hat)
     train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
     train_total_loss_metric.update_state(total_loss)
@@ -73,7 +73,7 @@ def get_train_step_function(model, weights, weight_opt, metrics):
   return train_step
 
 
-def get_train_step_arch_function(model, arch_params, arch_opt, train_metrics, arch_metrics):
+def get_train_step_arch_function(args, model, arch_params, arch_opt, train_metrics, arch_metrics):
   latency_reg_loss_metric = arch_metrics['latency_reg_loss']
   train_accuracy_metric = train_metrics['accuracy']
   train_cross_entropy_loss_metric = train_metrics['cross_entropy_loss']
@@ -84,10 +84,9 @@ def get_train_step_arch_function(model, arch_params, arch_opt, train_metrics, ar
     with tf.GradientTape() as tape:
       y_hat = model(x_batch, training=False)
       cross_entropy_loss = tf.reduce_mean(tf.keras.losses.categorical_crossentropy(y_batch, y_hat))
-      # TODO do we want L2 reg for arch parameters ?
-      weight_reg_loss = tf.add_n([tf.nn.l2_loss(w) for w in arch_params if 'bias' not in w.name])
+      weight_reg_loss = tf.reduce_sum(model.losses)
       latency_reg_loss = losses.parameters_loss(model) / 1.0e6
-      total_loss = cross_entropy_loss + args['arch_param_decay'] * weight_reg_loss + latency_reg_loss
+      total_loss = cross_entropy_loss + weight_reg_loss + latency_reg_loss
     latency_reg_loss_metric.update_state(latency_reg_loss)
     train_accuracy_metric.update_state(y_batch, y_hat)
     train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
@@ -105,16 +104,16 @@ def get_eval_step_function(model, metrics):
   @tf.function
   def evaluation_step(x_batch, y_batch):
     y_hat = model(x_batch, training=False)
-    loss = loss_fn(y_batch, y_hat)
+    loss = tf.reduce_mean(tf.keras.losses.categorical_crossentropy(y_batch, y_hat))
     val_accuracy_metric.update_state(y_batch, y_hat)
     val_cross_entropy_loss_metric.update_state(loss)
   return evaluation_step
 
 
-def metrics_processing(metrics, summary_writers, keys, template, tb_postfix=''):
+def metrics_processing(metrics, summary_writers, keys, template, epoch, tb_postfix=''):
   for key in keys:
-    with summary_writer[key].as_default():
-      for sub_key in metric[key]:
+    with summary_writers[key].as_default():
+      for sub_key in metrics[key]:
         value = float(metrics[key][sub_key].result())  # save metric value
         metrics[key][sub_key].reset_states()  # reset the metric
         template += f", {key}_{sub_key}: {value}"
@@ -128,9 +127,11 @@ def train(args):
   checkpoint_dir, log_dir, export_dir = create_env_directories(args, get_experiment_name(args))
   train_log_dir = os.path.join(log_dir, 'train')
   val_log_dir = os.path.join(log_dir, 'validation')
+  arch_log_dir = os.path.join(log_dir, 'arch')
   summary_writers = {
       'train': tf.summary.create_file_writer(train_log_dir),
-      'val': tf.summary.create_file_writer(val_log_dir)
+      'val': tf.summary.create_file_writer(val_log_dir),
+      'arch': tf.summary.create_file_writer(arch_log_dir)
   }
 
   # Prepare the 3 datasets
@@ -147,21 +148,28 @@ def train(args):
                                                   input_shape=args['input_size'],
                                                   label_dim=args['num_classes']).model
   model.summary()
+
+  # Add regularizer loss for arch search paramaeters
+  arch_param_l2 = tf.keras.regularizers.l2(args['arch_search']['arch_param_decay'])
+  for layer in model.layers:
+    if isinstance(layer, fbnetv2.ChannelMasking):
+      model.add_loss(lambda layer=layer: arch_param_l2(layer.alpha))
+
   alchemy_api.send_model_info(model, args['server'])
-  weights, arch_params = split_trainable_weights(model)
+  weights, arch_params = fbnetv2.split_trainable_weights(model)
   weight_opt = get_optimizer(args['optimizer'])
-  arch_opt = get_optimizer(args['arch_optimizer_param'])
+  arch_opt = get_optimizer(args['arch_search']['optimizer'])
   model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir)
 
-  temperature_decay_fn = exponential_decay(args['temperature']['init_value'],
-                                           args['temperature']['decay_steps'],
-                                           args['temperature']['decay_rate'])
+  temperature_decay_fn = fbnetv2.exponential_decay(args['arch_search']['temperature']['init_value'],
+                                           args['arch_search']['temperature']['decay_steps'],
+                                           args['arch_search']['temperature']['decay_rate'])
 
   lr_decay_fn = CosineDecay(args['optimizer']['lr'],
                             alpha=args["optimizer"]["lr_decay_strategy"]["lr_params"]["alpha"],
                             total_epochs=args['num_epochs'])
 
-  lr_decay_fn_arch = CosineDecay(args['arch_optimizer_param']['lr'],
+  lr_decay_fn_arch = CosineDecay(args['arch_search']['optimizer']['lr'],
                                  alpha=0.000001,
                                  total_epochs=args['num_epochs'])
 
@@ -180,8 +188,8 @@ def train(args):
       }
   }
 
-  train_step = get_train_step_function(model, weights, weight_opt, metrics['train'])
-  train_step_arch = get_train_step_arch_function(model, arch_params, arch_opt, metrics['train'], metrics['arch'])
+  train_step = get_train_step_function(args, model, weights, weight_opt, metrics['train'])
+  train_step_arch = get_train_step_arch_function(args, model, arch_params, arch_opt, metrics['train'], metrics['arch'])
   evaluation_step = get_eval_step_function(model, metrics['val'])
 
   for epoch in range(latest_epoch, args['num_epochs']):
@@ -197,7 +205,7 @@ def train(args):
       evaluation_step(x_batch, y_batch)
     # Handle metrics
     template = f"Weights updated, Epoch {epoch}"
-    template = metrics_processing(metrics, summary_writers, ['train', 'val'], template)
+    template = metrics_processing(metrics, summary_writers, ['train', 'val'], template, epoch)
     template += f", lr: {float(weight_opt.learning_rate)}"
     print(template)
 
@@ -206,7 +214,7 @@ def train(args):
       tf.summary.scalar('temperature', new_temperature, step=epoch)
     define_temperature(new_temperature)
 
-    if epoch >= args['num_warmup']:
+    if epoch >= args['arch_search']['num_warmup']:
       # Updating the architectural parameters on another subset
       for step, (x_batch, y_batch) in tqdm.tqdm(enumerate(train_arch_dataset, start=1)):
         train_step_arch(x_batch, y_batch)
@@ -215,7 +223,7 @@ def train(args):
         evaluation_step(x_batch, y_batch)
       # Handle metrics
       template = f'Architecture updated, Epoch {epoch}'
-      template = metrics_processing(metrics, summary_writers, ['train', 'val', 'arch'], template, tb_postfix='_after_arch_params_update')
+      template = metrics_processing(metrics, summary_writers, ['train', 'val', 'arch'], template, epoch, tb_postfix='_after_arch_params_update')
       template += f", lr: {float(arch_opt.learning_rate)}"
       print(template)
 
@@ -223,7 +231,7 @@ def train(args):
 
   print("Architecture params: ")
   print(arch_params)
-  post_training_analysis(model, args['exported_architecture'])
+  fbnetv2.post_training_analysis(model, args['arch_search']['exported_architecture'])
 
 
 if __name__ == '__main__':
