@@ -36,6 +36,8 @@ class TestFBnetMobileNet(unittest.TestCase):
     cls.file_path = cls.tempdir + '/test.yaml'
     with open(cls.file_path,'w') as f:
       yaml.dump(cls.test_mapping,f)
+    
+    cls.channel_last = True # TODO test for channels first
   
   def test_init(self):
     print(self.img[1:])
@@ -44,8 +46,14 @@ class TestFBnetMobileNet(unittest.TestCase):
       factor=1,
       input_shape=self.img.shape[1:],
       label_dim=10,
-      load_searched_arch=self.file_path)
-
-  @classmethod
-  def tearDownClass(cls):
-    pass
+      load_searched_arch=self.file_path).model
+    
+    model.summary()
+    get_dict = {}
+    for layer in model.layers:
+      # This type of checking the channels based on the architecture is not ideal.
+      # For this specific case we use the projection of the MobileNet block to get the channels used. 
+      if layer.name.startswith('conv2d_01') or layer.name.endswith('project'): # not proud
+        get_dict[layer.name.split('project')[0]] = layer.output.shape[-1] if self.channel_last else layer.output.shape[1]
+    
+    self.assertDictEqual(get_dict,self.test_mapping)

@@ -30,17 +30,24 @@ def create_binary_vector(channel_sizes: List[int], dtype) -> List[tf.Tensor]:
   return binary_vectors
 
 
-# TODO Rifat unittest
-def gumbel_softmax(logits, gumble_noise=True):
+def gumbel_softmax(logits, gumble_noise=False):
+  
   """please have a look at https://arxiv.org/pdf/1611.01144.pdf for gumble definition
   """
   global temperature
+
   if gumble_noise:
-    u = tf.random.uniform(minval=0.0, maxval=1.0, shape=tf.shape(logits))
-    noise = -tf.math.log(-tf.math.log(u))
+    # Gumble distribution -log(-log(u)), where u ~ (0,1) is a uniform distribution and 
+    # must be sampled from the open-interval `(0, 1)` but tf.random.uniform generates samples
+    #  where The lower bound minval is included in the range like [0, 1). To make sure the range
+    # to be (0, 1), np.finfo(float).tiny is used as minval which gives a tiny postive floating point number
+    u = tf.random.uniform(minval=np.finfo(float).tiny, maxval=1.0, shape=tf.shape(logits))
+    noise = -tf.math.log(-tf.math.log(u)) # Noise from gumbel distribution
   else:
     noise = 0.0001
+  
   noisy_logits = (noise + logits) / temperature
+
   return tf.math.softmax(noisy_logits)
 
 
@@ -94,17 +101,19 @@ def exponential_decay(initial_value, decay_steps, decay_rate):
 
 
 # TODO Rifat unittest
-def split_trainable_weights(model):
+def split_trainable_weights(model, arch_params_name='alpha'):
   """
       split the model parameters  in weights and architectural params
   """
   weights = []
   arch_params = []
   for trainable_weight in model.trainable_variables:
-    if 'alpha' in trainable_weight.name:
+    if arch_params_name in trainable_weight.name:
       arch_params.append(trainable_weight)
     else:
       weights.append(trainable_weight)
+  if not arch_params:
+    raise ValueError(f"No architecture parameters found by the name {arch_params_name}")
 
   return weights, arch_params
 

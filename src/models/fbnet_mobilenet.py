@@ -101,15 +101,15 @@ class _FBNet_MobileNetV2(GenericModel):
       tf.keras.backend.set_image_data_format('channels_first')
 
     # first_block_filters = _make_divisible(16, 8)
-    self.x = self.layers().ZeroPadding2D(padding=correct_pad(self.x, 3), name='Conv1_pad')(self.x)
+    self.x = self.layers().ZeroPadding2D(padding=correct_pad(self.x, 3), name='conv1_pad')(self.x)
 
     first_block_filters = self.mapping['conv2d_01']
     if not self.load_searched_arch:
-      self.x = self.layers().Conv2D(first_block_filters[0][1], kernel_size=3, strides=2, padding='valid', use_bias=False, name='Conv2d_01')(self.x)
+      self.x = self.layers().Conv2D(first_block_filters[0][1], kernel_size=3, strides=2, padding='valid', use_bias=False, name='conv2d_01')(self.x)
       self.x = ChannelMasking(*first_block_filters[0], name='conv2d_01_savable')(self.x)
       self.last_block_output_shape = first_block_filters[0][1]
     else:
-      self.x = self.layers().Conv2D(first_block_filters[0], kernel_size=3, strides=2, padding='valid', use_bias=False, name='Conv2d_01')(self.x)
+      self.x = self.layers().Conv2D(first_block_filters[0], kernel_size=3, strides=2, padding='valid', use_bias=False, name='conv2d_01')(self.x)
       self.last_block_output_shape = first_block_filters[0]
     self.x = self.layers().BatchNormalization(epsilon=1e-3, momentum=0.999)(self.x)
     self.x = self.layers().ReLU(6.)(self.x)
