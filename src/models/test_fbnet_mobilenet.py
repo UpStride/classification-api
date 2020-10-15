@@ -1,6 +1,7 @@
 import unittest
 import yaml 
 import tempfile
+import shutil
 import numpy as np
 
 from .fbnet_mobilenet import FBNet_MobileNetV2Imagenet
@@ -53,7 +54,8 @@ class TestFBnetMobileNet(unittest.TestCase):
     for layer in model.layers:
       # This type of checking the channels based on the architecture is not ideal.
       # For this specific case we use the projection of the MobileNet block to get the channels used. 
-      if layer.name.startswith('conv2d_01') or layer.name.endswith('project'): # not proud
+      if layer.name.startswith('conv2d_01') or layer.name.endswith('project'): 
         get_dict[layer.name.split('project')[0]] = layer.output.shape[-1] if self.channel_last else layer.output.shape[1]
     
     self.assertDictEqual(get_dict,self.test_mapping)
+    shutil.rmtree(self.tempdir)

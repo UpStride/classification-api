@@ -52,7 +52,7 @@ def get_experiment_name(args):
   return experiment_dir
 
 
-def get_train_step_function(args, model, weights, weight_opt, metrics):
+def get_train_step_function(model, weights, weight_opt, metrics):
   train_accuracy_metric = metrics['accuracy']
   train_cross_entropy_loss_metric = metrics['cross_entropy_loss']
   train_total_loss_metric = metrics['total_loss']
@@ -73,7 +73,7 @@ def get_train_step_function(args, model, weights, weight_opt, metrics):
   return train_step
 
 
-def get_train_step_arch_function(args, model, arch_params, arch_opt, train_metrics, arch_metrics):
+def get_train_step_arch_function(model, arch_params, arch_opt, train_metrics, arch_metrics):
   latency_reg_loss_metric = arch_metrics['latency_reg_loss']
   train_accuracy_metric = train_metrics['accuracy']
   train_cross_entropy_loss_metric = train_metrics['cross_entropy_loss']
@@ -182,8 +182,8 @@ def train(args):
       }
   }
 
-  train_step = get_train_step_function(args, model, weights, weight_opt, metrics['train'])
-  train_step_arch = get_train_step_arch_function(args, model, arch_params, arch_opt, metrics['train'], metrics['arch'])
+  train_step = get_train_step_function(model, weights, weight_opt, metrics['train'])
+  train_step_arch = get_train_step_arch_function(model, arch_params, arch_opt, metrics['train'], metrics['arch'])
   evaluation_step = get_eval_step_function(model, metrics['val'])
 
   for epoch in range(latest_epoch, args['num_epochs']):
