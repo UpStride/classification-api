@@ -7,6 +7,9 @@ from .fbnetv2 import ChannelMasking
 from .mobilenet import correct_pad
 is_channel_fist = False
 
+BATCHNORM_MOMENTUM = 0.9
+weight_regularizer = tf.keras.regularizers.l2(l=0.0001)
+arch_param_regularizer = tf.keras.regularizers.l2(l=0.0005)
 
 class _FBNet_MobileNetV2(GenericModel):
   def __init__(self, *args, load_searched_arch: str = None, **kwargs):
@@ -58,26 +61,26 @@ class _FBNet_MobileNetV2(GenericModel):
 
 
     # Expand
-    self.x = layers.Conv2D((expansion * in_channels), kernel_size=1, padding='same', use_bias=False, name=prefix + 'expand')(self.x)
+    self.x = layers.Conv2D((expansion * in_channels), kernel_size=1, padding='same', use_bias=False, name=prefix + 'expand', kernel_regularizer=weight_regularizer)(self.x)
     # if not self.load_searched_arch:
       # new_filter_range = [i * expansion for i in filters]
-      # self.x = ChannelMasking(*new_filter_range, name=prefix + '_cm1')(self.x)
-    self.x = layers.BatchNormalization(epsilon=1e-3, momentum=0.999, name=prefix + 'expand_BN')(self.x)
+      # self.x = ChannelMasking(*new_filter_range, name=prefix + '_cm1', regularizer=arch_param_regularizer)(self.x)
+    self.x = layers.BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'expand_BN')(self.x)
     self.x = layers.ReLU(6., name=prefix + 'expand_relu')(self.x)
 
     # Depthwise
     if stride == 2:
       self.x = layers.ZeroPadding2D(padding=correct_pad(self.x, 3), name=prefix + 'pad')(self.x)
     self.x = layers.DepthwiseConv2D(kernel_size=3, strides=stride, activation=None, use_bias=False, padding='same' if stride == 1 else 'valid',
-                                    name=prefix + 'depthwise')(self.x)
-    self.x = layers.BatchNormalization(epsilon=1e-3, momentum=0.999, name=prefix + 'depthwise_BN')(self.x)
+                                    name=prefix + 'depthwise', kernel_regularizer=weight_regularizer)(self.x)
+    self.x = layers.BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'depthwise_BN')(self.x)
     self.x = layers.ReLU(6., name=prefix + 'depthwise_relu')(self.x)
 
     # Project
-    self.x = layers.Conv2D(pointwise_conv_filters, kernel_size=1, padding='same', use_bias=False, activation=None, name=prefix + 'project')(self.x)
+    self.x = layers.Conv2D(pointwise_conv_filters, kernel_size=1, padding='same', use_bias=False, activation=None, name=prefix + 'project', kernel_regularizer=weight_regularizer)(self.x)
     if not self.load_searched_arch:
-      self.x = ChannelMasking(*filters, name=prefix + '_savable')(self.x)
-    self.x = layers.BatchNormalization(epsilon=1e-3, momentum=0.999, name=prefix + 'project_BN')(self.x)
+      self.x = ChannelMasking(*filters, name=prefix + '_savable', regularizer=arch_param_regularizer)(self.x)
+    self.x = layers.BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'project_BN')(self.x)
 
     if in_channels == pointwise_conv_filters and stride == 1:
       self.x = layers.Add(name=prefix + 'add')([inputs, self.x])
@@ -105,13 +108,13 @@ class _FBNet_MobileNetV2(GenericModel):
 
     first_block_filters = self.mapping['conv2d_01']
     if not self.load_searched_arch:
-      self.x = self.layers().Conv2D(first_block_filters[0][1], kernel_size=3, strides=2, padding='valid', use_bias=False, name='conv2d_01')(self.x)
-      self.x = ChannelMasking(*first_block_filters[0], name='conv2d_01_savable')(self.x)
+      self.x = self.layers().Conv2D(first_block_filters[0][1], kernel_size=3, strides=2, padding='valid', use_bias=False, name='conv2d_01', kernel_regularizer=weight_regularizer)(self.x)
+      self.x = ChannelMasking(*first_block_filters[0], name='conv2d_01_savable', regularizer=arch_param_regularizer)(self.x)
       self.last_block_output_shape = first_block_filters[0][1]
     else:
-      self.x = self.layers().Conv2D(first_block_filters[0], kernel_size=3, strides=2, padding='valid', use_bias=False, name='conv2d_01')(self.x)
+      self.x = self.layers().Conv2D(first_block_filters[0], kernel_size=3, strides=2, padding='valid', use_bias=False, name='conv2d_01', kernel_regularizer=weight_regularizer)(self.x)
       self.last_block_output_shape = first_block_filters[0]
-    self.x = self.layers().BatchNormalization(epsilon=1e-3, momentum=0.999)(self.x)
+    self.x = self.layers().BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM)(self.x)
     self.x = self.layers().ReLU(6.)(self.x)
     
 
@@ -126,14 +129,14 @@ class _FBNet_MobileNetV2(GenericModel):
     last_block_filters = 1984  # TODO try with 1280
 
     # TODO move this into the _conv_block once we planned to use the channel masking for the below
-    self.x = self.layers().Conv2D(last_block_filters, kernel_size=1, use_bias=False)(self.x)
+    self.x = self.layers().Conv2D(last_block_filters, kernel_size=1, use_bias=False, kernel_regularizer=weight_regularizer)(self.x)
     # if not self.load_searched_arch:
     #     self.x = layers.ChannelMasking(, 1984, )(self.x) # TODO test
-    self.x = self.layers().BatchNormalization(epsilon=1e-3, momentum=0.999)(self.x)
+    self.x = self.layers().BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM)(self.x)
     self.x = self.layers().ReLU(6., name='out_relu')(self.x)
 
     self.x = self.layers().GlobalAveragePooling2D()(self.x)
-    self.x = self.layers().Dense(self.label_dim, use_bias=True, name='Logits')(self.x)
+    self.x = self.layers().Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=weight_regularizer)(self.x)
 
 
 

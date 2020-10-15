@@ -149,12 +149,6 @@ def train(args):
                                                   label_dim=args['num_classes']).model
   model.summary()
 
-  # Add regularizer loss for arch search paramaeters
-  arch_param_l2 = tf.keras.regularizers.l2(args['arch_search']['arch_param_decay'])
-  for layer in model.layers:
-    if isinstance(layer, fbnetv2.ChannelMasking):
-      model.add_loss(lambda layer=layer: arch_param_l2(layer.alpha))
-
   alchemy_api.send_model_info(model, args['server'])
   weights, arch_params = fbnetv2.split_trainable_weights(model)
   weight_opt = get_optimizer(args['optimizer'])

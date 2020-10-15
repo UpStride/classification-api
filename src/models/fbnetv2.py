@@ -59,20 +59,21 @@ def get_mask(binary_vectors: List[tf.Tensor], g: List[float]):
 
 
 class ChannelMasking(tf.keras.layers.Layer):
-  def __init__(self, min: int, max: int, step: int, name: str, gumble_noise=True):
+  def __init__(self, min: int, max: int, step: int, name: str, gumble_noise=True, regularizer=None):
     super().__init__(name=name)
     self.min = min
     self.max = max
     self.step = step
     self.channel_sizes = []
     self.gumble_noise = gumble_noise
+    self.regularizer = regularizer
     for i in range(self.min, self.max+1, self.step):
       self.channel_sizes.append(i)
 
   def build(self, input_shape):
     self.alpha = self.add_weight(name=f"alpha",
                                  shape=(len(self.channel_sizes),),
-                                 initializer=tf.keras.initializers.Constant(value=1.))
+                                 initializer=tf.keras.initializers.Constant(value=1.), regularizer=self.regularizer)
     self.binary_vectors = create_binary_vector(self.channel_sizes, dtype=self.alpha.dtype)
 
   def call(self, inputs):
