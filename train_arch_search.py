@@ -110,14 +110,14 @@ def get_eval_step_function(model, metrics):
   return evaluation_step
 
 
-def metrics_processing(metrics, summary_writers, keys, template, epoch, tb_postfix=''):
+def metrics_processing(metrics, summary_writers, keys, template, epoch):
   for key in keys:
     with summary_writers[key].as_default():
       for sub_key in metrics[key]:
         value = float(metrics[key][sub_key].result())  # save metric value
         metrics[key][sub_key].reset_states()  # reset the metric
         template += f", {key}_{sub_key}: {value}"
-        tf.summary.scalar(sub_key + tb_postfix, value, step=epoch)
+        tf.summary.scalar(sub_key, value, step=epoch)
   return template
 
 
@@ -223,7 +223,7 @@ def train(args):
         evaluation_step(x_batch, y_batch)
       # Handle metrics
       template = f'Architecture updated, Epoch {epoch}'
-      template = metrics_processing(metrics, summary_writers, ['train', 'val', 'arch'], template, epoch, tb_postfix='_after_arch_params_update')
+      template = metrics_processing(metrics, summary_writers, ['train', 'val', 'arch'], template, epoch)
       template += f", lr: {float(arch_opt.learning_rate)}"
       print(template)
 
