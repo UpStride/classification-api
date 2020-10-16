@@ -30,7 +30,7 @@ arguments = [
     [int, "factor", 1, 'division factor to scale the number of channel. factor=2 means the model will have half the number of channels compare to default implementation'],
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture'],
-    [bool, 'log_arch', False, 'if true then save the values of the alpha parameters after every epochs in a csv file in log directory']
+    [bool, 'log_arch', False, 'if true then save the values of the alpha parameters after every epochs in a csv file in log directory'],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
     [str, 'framework', 'tensorflow', 'Framework to use to define the model', lambda x: x in framework_list],
 ] + global_conf.arguments + training.arguments
@@ -155,6 +155,9 @@ def train(args):
   weight_opt = get_optimizer(args['optimizer'])
   arch_opt = get_optimizer(args['arch_search']['optimizer'])
   model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir)
+  callbacks = [
+      model_checkpoint_cb
+  ]
 
   temperature_decay_fn = fbnetv2.exponential_decay(args['arch_search']['temperature']['init_value'],
                                                    args['arch_search']['temperature']['decay_steps'],
@@ -222,6 +225,10 @@ def train(args):
       template += f", lr: {float(arch_opt.learning_rate)}"
       print(template)
       fbnetv2.save_arch_params(model, epoch, log_dir)
+
+    # manually call the callbacks
+    for callback in callbacks:
+      callback.on_epoch_end(epoch, logs=None)
 
   print("Training Completed!!")
 
