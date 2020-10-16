@@ -30,6 +30,7 @@ arguments = [
     [int, "factor", 1, 'division factor to scale the number of channel. factor=2 means the model will have half the number of channels compare to default implementation'],
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture'],
+    [bool, 'log_arch', False, 'if true then save the values of the alpha parameters after every epochs in a csv file in log directory'],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
     [str, 'framework', 'tensorflow', 'Framework to use to define the model', lambda x: x in framework_list],
 ] + global_conf.arguments + training.arguments
@@ -86,7 +87,7 @@ def get_train_step_arch_function(model, arch_params, arch_opt, train_metrics, ar
       cross_entropy_loss = tf.reduce_mean(tf.keras.losses.categorical_crossentropy(y_batch, y_hat))
       weight_reg_loss = tf.reduce_sum(model.losses)
       latency_reg_loss = losses.parameters_loss(model) / 1.0e6
-      total_loss = cross_entropy_loss + weight_reg_loss # + latency_reg_loss
+      total_loss = cross_entropy_loss + weight_reg_loss  # + latency_reg_loss
     latency_reg_loss_metric.update_state(latency_reg_loss)
     train_accuracy_metric.update_state(y_batch, y_hat)
     train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
@@ -154,10 +155,13 @@ def train(args):
   weight_opt = get_optimizer(args['optimizer'])
   arch_opt = get_optimizer(args['arch_search']['optimizer'])
   model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir)
+  callbacks = [
+      model_checkpoint_cb
+  ]
 
   temperature_decay_fn = fbnetv2.exponential_decay(args['arch_search']['temperature']['init_value'],
-                                           args['arch_search']['temperature']['decay_steps'],
-                                           args['arch_search']['temperature']['decay_rate'])
+                                                   args['arch_search']['temperature']['decay_steps'],
+                                                   args['arch_search']['temperature']['decay_rate'])
 
   lr_decay_fn = CosineDecay(args['optimizer']['lr'],
                             alpha=args["optimizer"]["lr_decay_strategy"]["lr_params"]["alpha"],
@@ -220,6 +224,11 @@ def train(args):
       template = metrics_processing(metrics, summary_writers, ['train', 'val', 'arch'], template, epoch, postfix='_arch')
       template += f", lr: {float(arch_opt.learning_rate)}"
       print(template)
+      fbnetv2.save_arch_params(model, epoch, log_dir)
+
+    # manually call the callbacks
+    for callback in callbacks:
+      callback.on_epoch_end(epoch, logs=None)
 
   print("Training Completed!!")
 

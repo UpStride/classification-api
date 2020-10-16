@@ -1,4 +1,6 @@
+import json
 import unittest
+import os
 import shutil
 import tempfile
 import yaml
@@ -109,7 +111,7 @@ class TestPostTrainingAnalysis(unittest.TestCase):
          ])
     model(tf.zeros((1, 24, 24, 3), dtype=tf.float32))  # build is called here
     tmpdir = tempfile.mkdtemp()
-    tmpfile = tmpdir + "/test.yaml"
+    tmpfile = os.path.join(tmpdir, "test.yaml")
     fbnetv2.post_training_analysis(model, tmpfile)
     with open(tmpfile, 'r') as f:
       read = yaml.safe_load(f)
@@ -196,3 +198,39 @@ class TestGumbelSoftmax(unittest.TestCase):
     self.assertAlmostEqual(g[2], 0.)
     self.assertAlmostEqual(g[3], 0.)
     fbnetv2.define_temperature(5.0)
+
+
+class TestSaveArchParams(unittest.TestCase):
+  def test_save_arch_params(self):
+    cm1 = fbnetv2.ChannelMasking(1, 5, 2, 'toto_1_savable', gumble_noise=False)
+    cm2 = fbnetv2.ChannelMasking(8, 16, 4, 'toto_2_savable', gumble_noise=False)
+    model = tf.keras.Sequential(
+        [tf.keras.layers.Conv2D(5, (3, 3), padding='same', use_bias=False),
+         cm1,
+         tf.keras.layers.Conv2D(16, (3, 3), padding='same', use_bias=False),
+         cm2,
+         ])
+    model(tf.zeros((1, 24, 24, 3), dtype=tf.float32))  # build is called here
+
+    tmpdir = tempfile.mkdtemp()
+    fbnetv2.save_arch_params(model, epoch=0, log_dir=tmpdir)
+
+    # check that the file exists and the content
+    self.assertTrue(os.path.exists(os.path.join(tmpdir, "alpha.json")))
+    with open(os.path.join(tmpdir, "alpha.json")) as f:
+      a = json.load(f)
+    self.assertTrue('0' in a)
+    self.assertTrue('toto_1_savable' in a['0'])
+    self.assertTrue('toto_2_savable' in a['0'])
+
+    # simulate next epoch
+    cm1.alpha = tf.convert_to_tensor([0.5, 1, 0.5], dtype=tf.float32)
+    fbnetv2.save_arch_params(model, epoch=1, log_dir=tmpdir)
+    with open(os.path.join(tmpdir, "alpha.json")) as f:
+      a = json.load(f)
+    for i in range(1):
+      self.assertTrue(str(i) in a)
+      self.assertTrue('toto_1_savable' in a[str(i)])
+      self.assertTrue('toto_2_savable' in a[str(i)])
+
+    shutil.rmtree(tmpdir)

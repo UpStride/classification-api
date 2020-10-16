@@ -1,3 +1,5 @@
+import json
+import os
 from typing import List
 import yaml
 import tensorflow as tf
@@ -10,6 +12,7 @@ temperature = 5.0  # should be multiply by 0.956 at the end of every epoch, see 
 def define_temperature(new_temperature):
   global temperature
   temperature = new_temperature
+
 
 def create_binary_vector(channel_sizes: List[int], dtype) -> List[tf.Tensor]:
   """this function return a list of vector with ones at the beginning and zeros at the end
@@ -31,18 +34,17 @@ def create_binary_vector(channel_sizes: List[int], dtype) -> List[tf.Tensor]:
 
 
 def gumbel_softmax(logits, gumble_noise=False):
-  
   """please have a look at https://arxiv.org/pdf/1611.01144.pdf for gumble definition
   """
   global temperature
 
   if gumble_noise:
-    # Gumble distribution -log(-log(u)), where u ~ (0,1) is a uniform distribution and 
+    # Gumble distribution -log(-log(u)), where u ~ (0,1) is a uniform distribution and
     # must be sampled from the open-interval `(0, 1)` but tf.random.uniform generates samples
     #  where The lower bound minval is included in the range like [0, 1). To make sure the range
     # to be (0, 1), np.finfo(float).tiny is used as minval which gives a tiny postive floating point number
     u = tf.random.uniform(minval=np.finfo(float).tiny, maxval=1.0, shape=tf.shape(logits))
-    noise = -tf.math.log(-tf.math.log(u)) # Noise from gumbel distribution
+    noise = -tf.math.log(-tf.math.log(u))  # Noise from gumbel distribution
   else:
     noise = 0.0001
   # During mixed precision training, Weight Variable data type is inferred from "inputs" during call method
@@ -93,6 +95,7 @@ class ChannelMasking(tf.keras.layers.Layer):
     else:
       return mask * inputs
 
+
 def exponential_decay(initial_value, decay_steps, decay_rate):
   """
           Applies exponential decay to initial value
@@ -117,7 +120,6 @@ def split_trainable_weights(model, arch_params_name='alpha'):
       weights.append(trainable_weight)
   if not arch_params:
     raise ValueError(f"No architecture parameters found by the name {arch_params_name}")
-
   return weights, arch_params
 
 
@@ -135,3 +137,19 @@ def post_training_analysis(model, saved_file_path):
   print(saved_file_content)
   with open(saved_file_path, 'w') as f:
     yaml.dump(saved_file_content, f)
+
+
+def save_arch_params(model, epoch, log_dir):
+  json_file_path = os.path.join(log_dir, f'alpha.json')
+  content = {}
+  if os.path.exists(json_file_path):
+    with open(json_file_path) as f:
+      content = json.load(f)
+  for layer in model.layers:
+    if type(layer) == ChannelMasking:
+      # need to convert from numpy.float32 to pure python float32 to prepare the dumps
+      if str(epoch) not in content:
+        content[str(epoch)] = {}
+      content[str(epoch)][layer.name] = list(map(float, layer.alpha.numpy()))
+  with open(json_file_path, 'w') as f:
+    f.write(json.dumps(content))
