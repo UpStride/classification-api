@@ -86,7 +86,7 @@ def get_train_step_arch_function(model, arch_params, arch_opt, train_metrics, ar
       cross_entropy_loss = tf.reduce_mean(tf.keras.losses.categorical_crossentropy(y_batch, y_hat))
       weight_reg_loss = tf.reduce_sum(model.losses)
       latency_reg_loss = losses.parameters_loss(model) / 1.0e6
-      total_loss = cross_entropy_loss + weight_reg_loss + latency_reg_loss
+      total_loss = cross_entropy_loss + weight_reg_loss # + latency_reg_loss
     latency_reg_loss_metric.update_state(latency_reg_loss)
     train_accuracy_metric.update_state(y_batch, y_hat)
     train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
@@ -110,14 +110,14 @@ def get_eval_step_function(model, metrics):
   return evaluation_step
 
 
-def metrics_processing(metrics, summary_writers, keys, template, epoch):
+def metrics_processing(metrics, summary_writers, keys, template, epoch, postfix=''):
   for key in keys:
     with summary_writers[key].as_default():
       for sub_key in metrics[key]:
         value = float(metrics[key][sub_key].result())  # save metric value
         metrics[key][sub_key].reset_states()  # reset the metric
         template += f", {key}_{sub_key}: {value}"
-        tf.summary.scalar(sub_key, value, step=epoch)
+        tf.summary.scalar(sub_key+postfix, value, step=epoch)
   return template
 
 
@@ -217,7 +217,7 @@ def train(args):
         evaluation_step(x_batch, y_batch)
       # Handle metrics
       template = f'Architecture updated, Epoch {epoch}'
-      template = metrics_processing(metrics, summary_writers, ['train', 'val', 'arch'], template, epoch)
+      template = metrics_processing(metrics, summary_writers, ['train', 'val', 'arch'], template, epoch, postfix='_arch')
       template += f", lr: {float(arch_opt.learning_rate)}"
       print(template)
 
