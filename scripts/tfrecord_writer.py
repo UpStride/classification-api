@@ -30,17 +30,17 @@ from upstride_argparse import parse_cmd
 
 class UpStrideDatasetBuilder:
   def __init__(self, name: str, description: str, tfrecord_dir_path: str, class_names: List[str], splits: List[create_tfrecord.Split],
-               tfrecord_size=10000, preprocessing="NO", image_size=(224, 224)):
+               tfrecord_size=10000, preprocessing="NO", image_size=(224, 224), n_tfrecord=0):
     """ Dataset builder class
 
-        Args:
-            name: name of the dataset
-            description: description of the dataset
-            class_names: class names of the dataset
-            tfrecord_dir_path: directory path to write the tfrecords
-            tfrecord_size: number of images to write in a tfrecord file
-            preprocessing: one of PREPROCESSING_STRATEGIES
-            image_size: (224, 224) the size of the image to load in the tfrecord
+    Args:
+        name: name of the dataset
+        description: description of the dataset
+        class_names: class names of the dataset
+        tfrecord_dir_path: directory path to write the tfrecords
+        tfrecord_size: number of images to write in a tfrecord file
+        preprocessing: one of PREPROCESSING_STRATEGIES
+        image_size: (224, 224) the size of the image to load in the tfrecord
     """
     self.metadata = {"name": name, "description": description, 'splits': {}, "class_names": class_names}
     self.tfrecord_dir_path = os.path.join(tfrecord_dir_path, name)
@@ -49,6 +49,7 @@ class UpStrideDatasetBuilder:
     self.preprocessing = preprocessing
     assert len(image_size) == 2, f"image_size must have a len of 2"
     self.image_size = image_size
+    self.n_tfrecord = n_tfrecord
 
   def __tfrecord_files_list(self, split_name):
     """
@@ -66,7 +67,7 @@ class UpStrideDatasetBuilder:
     """
     print(f"Creating {split_name} split.....")
     store_images_in_tfrecords(path_label_list, self.tfrecord_dir_path, split_name, self.tfrecord_size,
-                              self.preprocessing, self.image_size)
+                              self.preprocessing, self.image_size, self.n_tfrecord)
 
   def __store_dataset_metadata(self):
     """
@@ -144,9 +145,8 @@ def load_and_preprocess_img(img_path: str, final_shape, preprocessing: str):
 
 def store_images_in_tfrecords(path_label_list: List[dict], tfrecord_dir_path: str, tfrecord_prefix: str,
                               tfrecord_size: int,
-                              preprocessing="NO", image_size=(224, 224)):
-  """
-      store images in tf records
+                              preprocessing="NO", image_size=(224, 224), n_tfrecord=0):
+  """ store images in tf records
   Args:
       path_label_list: list of image info, each contain path and class id
       tfrecord_dir_path: directory path to write the tfrecords
@@ -156,7 +156,12 @@ def store_images_in_tfrecords(path_label_list: List[dict], tfrecord_dir_path: st
       image_size: size of the image to load in the tfrecord
   """
 
-  tfrecord_manager = create_tfrecord.TfRecordManager(tfrecord_dir_path, tfrecord_prefix, tfrecord_size)
+  if n_tfrecord:
+    # then create several tfrecord_manager for every tfrecords
+    tfrecord_managers = [create_tfrecord.TfRecordManager(tfrecord_dir_path, tfrecord_prefix + f'_{i}', 5000000000000) for i in range(n_tfrecord)]  
+    class_id_to_tfrecord_id = {} # dict that map the class id to the id of the tfrecord to write data
+  else:
+    tfrecord_manager = create_tfrecord.TfRecordManager(tfrecord_dir_path, tfrecord_prefix, tfrecord_size)
   # Store all images in tfrecord
   for i, image_info in enumerate(path_label_list):
     try:
@@ -164,7 +169,15 @@ def store_images_in_tfrecords(path_label_list: List[dict], tfrecord_dir_path: st
       feature = {'image': create_tfrecord.bytes_feature(img), 'label': create_tfrecord.int64_feature(image_info['id']),
                  'size': create_tfrecord.int64_list_feature([height, width])}
       example = tf.train.Example(features=tf.train.Features(feature=feature))
-      tfrecord_manager.add(example)
+      if n_tfrecord:
+        if not image_info['id'] in class_id_to_tfrecord_id:
+          class_id_to_tfrecord_id[image_info['id']] = 0
+        tfrecord_managers[class_id_to_tfrecord_id[image_info['id']]].add(example)
+        class_id_to_tfrecord_id[image_info['id']] += 1
+        if class_id_to_tfrecord_id[image_info['id']] == n_tfrecord:
+          class_id_to_tfrecord_id[image_info['id']] = 0
+      else:
+        tfrecord_manager.add(example)
     except Exception as e:
       logging.warning('error with image', image_info['path'], ':', e)
 
@@ -186,6 +199,10 @@ def group_image_paths_by_classes_from_dir(data_dir):
           img2.jpg
   and create a group by class dictionary in the format {class1: [img1.jpg, img2.jpg], class3: [img1.jpg, img2.jpg, img3.jpg]}
   from the annotation file
+
+  Returns:
+    class_map: dict mapping class names to list of paths
+    classes_names: sorted list of the names of the classes
 
   """
 
@@ -264,15 +281,13 @@ def build_tfrecord_dataset(args):
   split_percentages = args['data']['split_percentages']
 
   if len(split_names) != len(split_percentages):
-    raise ValueError("split_names and split_percentages lengths should  be  same")
+    raise ValueError("split_names and split_percentages lengths should be same")
 
   total_percentage = 0
   for i in range(len(split_names)):
     total_percentage += split_percentages[i]
     if not (0. <= split_percentages[i] <= 1.):
-      raise ValueError(
-          f"{split_names[i]} split percentage should in range 0~1, but given "
-          f"{split_percentages[i]}")
+      raise ValueError(f"{split_names[i]} split percentage should in range 0~1, but given " f"{split_percentages[i]}")
 
   if not total_percentage == 1:
     raise ValueError(f"Total percentage of all splits should equal to 1, but got {total_percentage}")
@@ -287,7 +302,7 @@ def build_tfrecord_dataset(args):
     # images are stored in the sub-directories named by their class names
     class_map, classes_names = group_image_paths_by_classes_from_dir(args["data"]["images_dir_path"])
 
-  split_dict = {split_name: [] for split_name in split_names}
+  split_dict = {split_name: [] for split_name in split_names} # this dict map the split name to the list of images in the splits
   # Now look over all the images of all the classes and split them
   for i, class_name in enumerate(classes_names):
     images = [{'path': path, 'id': i} for path in class_map[class_name]]
@@ -311,7 +326,7 @@ def build_tfrecord_dataset(args):
   n_classes = len(classes_names)
   print(f"Found {n_classes} classes")
   builder = UpStrideDatasetBuilder(args["name"], args["description"], args["tfrecord_dir_path"], classes_names,
-                                   splits, args["tfrecord_size"], args["preprocessing"], tuple(args["image_size"]))
+                                   splits, args["tfrecord_size"], args["preprocessing"], tuple(args["image_size"]), args["n_tfrecords"])
   builder.build()
 
   print(f"Dataset creation complete and stored in {args['tfrecord_dir_path']}")
@@ -322,6 +337,7 @@ dataset_arguments = [
     [str, 'description', "", 'Description of the dataset'],
     [str, 'tfrecord_dir_path', "", 'Directory where to store tfrecords'],
     [int, 'tfrecord_size', 10000, 'Number of images to be stored for each file'],
+    [int, 'n_tfrecords', 0, 'if different than 0 (default value) then ignore the "tfrecord_size" parameter and create this number of tfrecords'],
     [str, 'preprocessing', "NO", 'preprocessing: preprocessing to apply one among ["NO", "CENTER_CROP_THEN_SCALE", "SQUARE_MARGIN_THEN_SCALE"]'],
     ['list[int]', 'image_size', (224, 224), 'Shape that the image will have after the preprocessing. For instance (224, 224)'],
     ['namespace', 'data', [

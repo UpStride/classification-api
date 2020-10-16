@@ -17,7 +17,7 @@ class TestTfrecordWriter(unittest.TestCase):
     tfrecord_dir_path = tempfile.mkdtemp()
 
     args = {'name': name, 'description': description, 'tfrecord_dir_path': tfrecord_dir_path,
-            'tfrecord_size': 2, 'preprocessing': 'NO', 'image_size': (224, 224),
+            'tfrecord_size': 2, 'preprocessing': 'NO', 'image_size': (224, 224), "n_tfrecords":0,
             'data': {'images_dir_path': data_dir,
                      'annotation_file_path': None,
                      'delimiter': ',',
@@ -44,6 +44,46 @@ class TestTfrecordWriter(unittest.TestCase):
     shutil.rmtree(data_dir)
     shutil.rmtree(tfrecord_dir_path)
 
+  def test_process_images_in_class_directory_fixed_number_of_tfrecord(self):
+    num_examples_each_class = 10
+    data_dir = create_fake_dataset(num_examples_each_class)
+    name = 'Test-dataset'
+    description = 'A small test datset'
+    tfrecord_dir_path = tempfile.mkdtemp()
+
+    args = {'name': name, 'description': description, 'tfrecord_dir_path': tfrecord_dir_path,
+            'tfrecord_size': 20, 'preprocessing': 'NO', 'image_size': (224, 224), "n_tfrecords":5,
+            'data': {'images_dir_path': data_dir,
+                     'annotation_file_path': None,
+                     'delimiter': ',',
+                     'header_exists': False,
+                     'split_names': ['train', 'validation', 'test'],
+                     'split_percentages': [0.8, 0.1, 0.1],
+                     }
+            }
+    build_tfrecord_dataset(args)
+    print(tfrecord_dir_path)
+    dataset_info = load_yaml(data_dir=tfrecord_dir_path, dataset_name=name)
+
+    # check newly created datset name and description
+    self.assertEqual(name, dataset_info['name'])
+    self.assertEqual(description, dataset_info['description'])
+
+    i = 0
+    # check split percentage
+    for split_name, split_items in dataset_info['splits'].items():
+      num_exmaples = split_items['num_examples']
+      self.assertAlmostEqual(args['data']['split_percentages'][i], num_exmaples / (2.0 * num_examples_each_class))
+      i += 1
+
+    # check number of tfrecords 
+    self.assertEqual(5, len(dataset_info['splits']['train']['tfrecord_files']))
+
+    shutil.rmtree(data_dir)
+    shutil.rmtree(tfrecord_dir_path)
+
+
+
   def test_process_with_annotation_file(self):
     num_examples_each_class = 10
     data_dir, annotation_file = create_fake_dataset_with_annotation_file(num_examples_each_class)
@@ -52,7 +92,7 @@ class TestTfrecordWriter(unittest.TestCase):
     tfrecord_dir_path = tempfile.mkdtemp()
 
     args = {'name': name, 'description': description, 'tfrecord_dir_path': tfrecord_dir_path,
-            'tfrecord_size': 2, 'preprocessing': 'NO', 'image_size': (224, 224),
+            'tfrecord_size': 2, 'preprocessing': 'NO', 'image_size': (224, 224), "n_tfrecords":0,
             'data': {'images_dir_path': data_dir,
                      'annotation_file_path': annotation_file,
                      'delimiter': ',',
