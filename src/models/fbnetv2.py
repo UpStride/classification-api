@@ -47,7 +47,10 @@ def gumbel_softmax(logits, gumble_noise=False):
     noise = -tf.math.log(-tf.math.log(u))  # Noise from gumbel distribution
   else:
     noise = 0.0001
-
+  # During mixed precision training, Weight Variable data type is inferred from "inputs" during call method
+  # This makes alpha to be converted to float16. 
+  # Since we are computing softmax at the end, we need to convert logits(alpha) to float32
+  logits = tf.cast(logits, tf.float32) 
   noisy_logits = (noise + logits) / temperature
 
   return tf.math.softmax(noisy_logits)
@@ -81,6 +84,8 @@ class ChannelMasking(tf.keras.layers.Layer):
   def call(self, inputs):
     self.g = gumbel_softmax(self.alpha, self.gumble_noise)
     mask = get_mask(self.binary_vectors,  self.g)
+    # Convert mast from Float32 to Float16 during mixed precision. 
+    mask = tf.cast(mask, dtype=inputs.dtype)
 
     # work with channel last but not channel first
     if tf.keras.backend.image_data_format() == 'channels_first':
