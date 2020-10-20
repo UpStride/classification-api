@@ -224,7 +224,8 @@ def train(args):
       template = metrics_processing(metrics, summary_writers, ['train', 'val', 'arch'], template, epoch, postfix='_arch')
       template += f", lr: {float(arch_opt.learning_rate)}"
       print(template)
-      fbnetv2.save_arch_params(model, epoch, log_dir)
+    # move saved outside of condition so we save starting from the begining
+    fbnetv2.save_arch_params(model, epoch, log_dir)
 
     # manually call the callbacks
     for callback in callbacks:
