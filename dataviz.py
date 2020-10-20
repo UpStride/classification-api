@@ -2,7 +2,6 @@ import cv2
 import os
 import tensorflow as tf
 import upstride_argparse as argparse
-from src.argument_parser import training_arguments_no_keras_tuner
 from src.data import dataloader
 
 arguments = [
@@ -19,7 +18,9 @@ def main():
   for dataset_type in ['train', 'val']:
     for i, (images, y) in enumerate(datasets[dataset_type]):
       image = images[0]
-      cv2.imwrite(os.path.join('/tmp', f'{dataset_type}_{i}.png'), image.numpy())
+      # opencv manage images as BGR object, TF as RGB
+      image = image.numpy()[:, :, ::-1]
+      cv2.imwrite(os.path.join('/tmp', f'{dataset_type}_{i}.png'), image)
       if i == 20:
         break
 
