@@ -36,12 +36,14 @@ def main():
 
 
 def get_model(args):
+  load_arch = args['load_searched_arch'] if args['load_searched_arch'] else None
   model = model_name_to_class[args['model_name']](args['framework'],
                                                   args['factor'],
                                                   args['input_size'],
                                                   args['num_classes'],
                                                   args['n_layers_before_tf'],
-                                                  False).model
+                                                  False,
+                                                  load_searched_arch=load_arch).model
   model.summary()
   optimizer = get_optimizer(args['optimizer'])
   model.compile(optimizer=optimizer, loss='categorical_crossentropy',
