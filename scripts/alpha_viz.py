@@ -10,9 +10,9 @@ import upstride_argparse as argparse
 arguments = [
     [str, "alpha_path", '', 'path of the alpha file to parse'],
     [int, "epoch", 0, 'if different than 0 then visualize a single epoch'],
-    [int, "min_epoch", 0, 'if provided, then define the minimum epoch to visualize'],
-    [int, "max_epoch", 0, 'if provided, then define the maximum epoch to visualize'],
-    [int, "step_epoch", 100, 'number of steps between 2 epochs to visualize'],
+    [int, "min", 0, 'if provided, then define the minimum epoch to visualize'],
+    [int, "max", 0, 'if provided, then define the maximum epoch to visualize'],
+    [int, "step", 100, 'number of steps between 2 epochs to visualize'],
     ['list[str]', "params", [], 'if specified, list of parameters to  visualize']
 ]
 
@@ -24,8 +24,8 @@ def prepare_data(args):
   epochs = list(map(int, alphas.keys()))
   epochs.sort()
 
-  min_epoch = max(epochs[0], args['min_epoch']) if args['min_epoch'] else epochs[0]
-  max_epoch = min(epochs[-1], args['max_epoch']) if args['max_epoch'] else epochs[-1]
+  min_epoch = max(epochs[0], args['min']) if args['min'] else epochs[0]
+  max_epoch = min(epochs[-1], args['max']) if args['max'] else epochs[-1]
 
   if args['epoch']:
     min_epoch = args['epoch']
@@ -45,7 +45,7 @@ def main():
   matplotlib.use("GTK3Agg")
   args = argparse.parse_cmd(arguments)
   alphas, min_epoch, max_epoch, params = prepare_data(args)
-  number_bars = (max_epoch - min_epoch) // args["step_epoch"] + 1
+  number_bars = (max_epoch - min_epoch) // args["step"] + 1
   colors = cm.OrRd_r(np.linspace(.2, .6, number_bars))
 
   # grid has a fixed number of columns of 5
@@ -58,12 +58,12 @@ def main():
     axs = [axs]
   else:
     fig, axs = plt.subplots(math.ceil(n_params/5), 5, figsize=(9, 3))
-  fig.suptitle(f'Alpha  parameter between {min_epoch} and {max_epoch} epochs (step: {args["step_epoch"]})')
+  fig.suptitle(f'Alpha  parameter between {min_epoch} and {max_epoch} epochs (step: {args["step"]})')
 
   total_width = 0.7
   width = total_width / number_bars
   for i in range(number_bars):
-    epoch = min_epoch + i * args["step_epoch"]
+    epoch = min_epoch + i * args["step"]
     for k, param in enumerate(params):
       p = alphas[str(epoch)][param + '_savable']
 
