@@ -21,77 +21,19 @@ adapted to upstride
   | mobilenet_v3_small_1.0_224              | 66  | 2.9 |   68.1   |   15.8  |
   | mobilenet_v3_small_0.75_224             | 44  | 2.4 |   65.4   |   12.8  |
   | mobilenet_v3_small_minimalistic_1.0_224 | 65  | 2.0 |   61.9   |   12.2  |
-'''
+
+6.1.1    Training setup
+We train our models using synchronous training setup on4x4 TPU Pod [24] using standard tensorflow 
+RMSPropOp-timizer with 0.9 momentum. We use the initial learning rateof  0.1,
+with  batch  size  4096  (128  images  per  chip),  andlearning  rate  decay  rate  of  0.01
+every  3  epochs.   We  use dropout of 0.8, and l2 weight decay 1e-5 and the same image preprocessing as Inception [42].
+Finally we use expo-nential moving average with decay 0.9999. '''
+
 import tensorflow as tf 
 from .generic_model import GenericModel
 
-"""
-  Arguments:
-    input_shape: Optional shape tuple, to be specified if you would
-      like to use a model with an input image resolution that is not
-      (224, 224, 3).
-      It should have exactly 3 inputs channels (224, 224, 3).
-      You can also omit this option if you would like
-      to infer input_shape from an input_tensor.
-      If you choose to include both input_tensor and input_shape then
-      input_shape will be used if they match, if the shapes
-      do not match then we will throw an error.
-      E.g. `(160, 160, 3)` would be one valid value.
-    alpha: controls the width of the network. This is known as the
-      depth multiplier in the MobileNetV3 paper, but the name is kept for
-      consistency with MobileNetV1 in Keras.
-      - If `alpha` < 1.0, proportionally decreases the number
-          of filters in each layer.
-      - If `alpha` > 1.0, proportionally increases the number
-          of filters in each layer.
-      - If `alpha` = 1, default number of filters from the paper
-          are used at each layer.
-    minimalistic: In addition to large and small models this module also
-      contains so-called minimalistic models, these models have the same
-      per-layer dimensions characteristic as MobilenetV3 however, they don't
-      utilize any of the advanced blocks (squeeze-and-excite units, hard-swish,
-      and 5x5 convolutions). While these models are less efficient on CPU, they
-      are much more performant on GPU/DSP.
-    include_top: Boolean, whether to include the fully-connected
-      layer at the top of the network. Defaults to `True`.
-    weights: String, one of `None` (random initialization),
-      'imagenet' (pre-training on ImageNet),
-      or the path to the weights file to be loaded.
-    input_tensor: Optional Keras tensor (i.e. output of
-      `layers.Input()`)
-      to use as image input for the model.
-    pooling: String, optional pooling mode for feature extraction
-      when `include_top` is `False`.
-      - `None` means that the output of the model
-          will be the 4D tensor output of the
-          last convolutional block.
-      - `avg` means that global average pooling
-          will be applied to the output of the
-          last convolutional block, and thus
-          the output of the model will be a
-          2D tensor.
-      - `max` means that global max pooling will
-          be applied.
-    classes: Integer, optional number of classes to classify images
-      into, only to be specified if `include_top` is True, and
-      if no `weights` argument is specified.
-    dropout_rate: fraction of the input units to drop on the last layer.
-    classifier_activation: A `str` or callable. The activation function to use
-      on the "top" layer. Ignored unless `include_top=True`. Set
-      `classifier_activation=None` to return the logits of the "top" layer.
-
-  Returns:
-    A `keras.Model` instance.
-
-  Raises:
-    ValueError: in case of invalid argument for `weights`,
-      or invalid input shape or invalid alpha, rows when
-      weights='imagenet'
-    ValueError: if `classifier_activation` is not `softmax` or `None` when
-      using a pretrained top layer.
-"""
-
-BATCH_NORM_MOMEMTUM = 0.9
+BATCH_NORM_MOMEMTUM = 0.9 
+KERNEL_REGULARIZER = tf.keras.regularizers.l2(l2=1e-3) 
 
 def _make_divisble(v, divisor=8, min_value=None):
   if min_value is None:
@@ -113,8 +55,8 @@ def correct_pad(inputs, kernel_size):
   img_dim = 1
   if type(inputs) == list:
     inputs = inputs[0]
-  is_channel_fist = False
-  if is_channel_fist: # TODO If and else are the same. investigate on this.
+  is_channel_first = False
+  if is_channel_first: # TODO If and else are the same. investigate this.
     input_size = tf.keras.backend.int_shape(inputs)[img_dim+1:(img_dim + 3)]
   else:
     input_size = tf.keras.backend.int_shape(inputs)[img_dim+1:(img_dim + 3)]
@@ -133,15 +75,13 @@ def correct_pad(inputs, kernel_size):
           (correct[1] - adjust[1], correct[1]))
 
 def relu(x):
-  return tf.nn.relu6(x)
+  return tf.nn.relu(x)
 
 def hard_sigmoid(x):
-  return tf.nn.relu6((x + 3.) * (1. / 6.))
+  return tf.nn.relu6((x + 3.)) * (1. / 6.)
 
 def hard_swish(x):
   return x * hard_sigmoid(x) 
-
-tf.keras.activations.hard_sigmoid
 
 class _MobileNetV3(GenericModel):
   def __init__(self, *args, **kwargs):
@@ -152,7 +92,6 @@ class _MobileNetV3(GenericModel):
   def _inverted_res_block(self, expansion, filters, kernel_size, stride, se_ratio,
                           activation_fn, block_id):
     layers = self.layers()  # we don't want to switch between tf and upstride in this block
-    # shouldn't this be deepcopy??
     inputs = self.x
     prefix = 'expanded_conv/'
     infilters = self.last_block_output_shape 
@@ -162,6 +101,7 @@ class _MobileNetV3(GenericModel):
       self.x = layers.Conv2D(
           _make_divisble(infilters * expansion),
           kernel_size=1,
+          kernel_regularizer=KERNEL_REGULARIZER,
           padding='same',
           use_bias=False,
           name=prefix + 'expand')(
@@ -180,6 +120,7 @@ class _MobileNetV3(GenericModel):
               self.x)
     self.x = layers.DepthwiseConv2D(
         kernel_size,
+        kernel_regularizer=KERNEL_REGULARIZER,
         strides=stride,
         padding='same' if stride == 1 else 'valid',
         use_bias=False,
@@ -192,12 +133,14 @@ class _MobileNetV3(GenericModel):
         name=prefix + 'depthwise/BatchNorm')(
             self.x)
     self.x = layers.Activation(activation_fn)(self.x)
+
     if se_ratio:
       self._se_block(_make_divisble(infilters * expansion), se_ratio, prefix)
 
     self.x = layers.Conv2D(
         filters,
         kernel_size=1,
+        kernel_regularizer=KERNEL_REGULARIZER,
         padding='same',
         use_bias=False,
         name=prefix + 'project')(
@@ -211,6 +154,7 @@ class _MobileNetV3(GenericModel):
 
     if stride == 1 and infilters == filters:
       self.x = layers.Add(name=prefix + 'Add')([inputs, self.x])
+
     self.last_block_output_shape = filters
 
   def _se_block(self, filters, se_ratio, prefix):
@@ -224,6 +168,7 @@ class _MobileNetV3(GenericModel):
     self.x = layers.Conv2D(
         _make_divisble(filters * se_ratio),
         kernel_size=1,
+        kernel_regularizer=KERNEL_REGULARIZER,
         padding='same',
         name=prefix + 'squeeze_excite/Conv')(
             self.x)
@@ -231,6 +176,7 @@ class _MobileNetV3(GenericModel):
     self.x = layers.Conv2D(
         filters,
         kernel_size=1,
+        kernel_regularizer=KERNEL_REGULARIZER,
         padding='same',
         name=prefix + 'squeeze_excite/Conv_1')(
             self.x)
@@ -250,7 +196,7 @@ class _MobileNetV3(GenericModel):
         momentum=BATCH_NORM_MOMEMTUM, name='Conv/BatchNorm')(self.x)
     self.x = self.layers().Activation(hard_swish, name='hard_swish')(self.x)
 
-    for layer in self.config:
+    for i, layer in enumerate(self.config):
       self._inverted_res_block(
         layer[0], # expansion
         _make_divisble(layer[1] * self.alpha) // self.factor, # filters
@@ -258,7 +204,7 @@ class _MobileNetV3(GenericModel):
         layer[3], # stride
         layer[4], # se_ration
         layer[5], # activation
-        layer[6]  # block_id
+        i  # block_id
         )
     
     if type(self.x) == list:
@@ -274,6 +220,7 @@ class _MobileNetV3(GenericModel):
     self.x = self.layers().Conv2D(
         last_conv_ch,
         kernel_size=1,
+        kernel_regularizer=KERNEL_REGULARIZER,
         padding='same',
         use_bias=False,
         name='Conv_1')(self.x)
@@ -293,57 +240,95 @@ class _MobileNetV3(GenericModel):
     self.x = self.layers().Conv2D(
         self.last_point_ch // self.factor,
         kernel_size=1,
+        kernel_regularizer=KERNEL_REGULARIZER,
         padding='same',
         use_bias=True,
         name='Conv_2')(self.x)
     self.x = self.layers().Activation(hard_swish)(self.x)
 
-    self.x = self.layers().Conv2D(self.label_dim, kernel_size=1, padding='same', name='Logits')(self.x)
+    self.x = self.layers().Conv2D(
+        self.label_dim, 
+        kernel_size=1, 
+        kernel_regularizer=KERNEL_REGULARIZER,
+        padding='same', 
+        name='Logits')(self.x)
     self.x = self.layers().Flatten()(self.x)
 
   
 class MobileNetV3Small(_MobileNetV3):
+  """MobileNetV3 small version has 11 layers of inverted blocks.
+
+  Args:
+    alpha: controls the width of the network. This is known as the
+      depth multiplier in the MobileNetV3 paper, but the name is kept for
+      consistency with MobileNetV1 in Keras.
+      - If `alpha` < 1.0, proportionally decreases the number
+          of filters in each layer.
+      - If `alpha` > 1.0, proportionally increases the number
+          of filters in each layer.
+      - If `alpha` = 1, default number of filters from the paper
+          are used at each layer.
+    dropout_rate: default rate is set to zero.
+    config: configuration for the inverted residual blocks.
+  """
   def __init__(self, *args, **kwargs):
     self.alpha = 1.0
     self.dropout_rate = 0
     self.config = [
-    # expansion, filters, kernel, stride, se_ratio, activation, block_id
-        (1,        16,      3,      2,      None,       relu,      0), 
-        (4.5,      24,      3,      2,      None,       relu,      1), 
-        (3.66,     24,      3,      1,      None,       relu,      2), 
-        (4,        40,      3,      2,      None,       relu,      3), 
-        (6,        40,      3,      1,      None,       relu,      4), 
-        (6,        40,      3,      1,      None,       relu,      5), 
-        (3,        48,      3,      1,      None,       relu,      6), 
-        (3,        48,      3,      1,      None,       relu,      7), 
-        (6,        96,      3,      2,      None,       relu,      8), 
-        (6,        96,      3,      1,      None,       relu,      9), 
-        (6,        96,      3,      1,      None,       relu,      10), 
+    
+    # TODO plan to replace with strings
+    # expansion, filters, kernel, stride, se_ratio, activation
+        (1,        16,      3,      2,      0.25,       relu), 
+        (4.5,      24,      3,      2,      None,       relu), 
+        (3.66,     24,      3,      1,      None,       relu), 
+        (4,        40,      5,      2,      0.25,       hard_swish), 
+        (6,        40,      5,      1,      0.25,       hard_swish), 
+        (6,        40,      5,      1,      0.25,       hard_swish), 
+        (3,        48,      5,      1,      0.25,       hard_swish), 
+        (3,        48,      5,      1,      0.25,       hard_swish), 
+        (6,        96,      5,      2,      0.25,       hard_swish), 
+        (6,        96,      5,      1,      0.25,       hard_swish), 
+        (6,        96,      5,      1,      0.25,       hard_swish), 
     ]
     self.last_point_ch = 1024
     super().__init__(*args, **kwargs)
 
 class MobileNetV3Large(_MobileNetV3):
+  """MobileNetV3 large version has 15 layers of inverted blocks.
+
+  Args:
+    alpha: controls the width of the network. This is known as the
+      depth multiplier in the MobileNetV3 paper, but the name is kept for
+      consistency with MobileNetV1 in Keras.
+      - If `alpha` < 1.0, proportionally decreases the number
+          of filters in each layer.
+      - If `alpha` > 1.0, proportionally increases the number
+          of filters in each layer.
+      - If `alpha` = 1, default number of filters from the paper
+          are used at each layer.
+    dropout_rate: default rate is set to zero.
+    config: configuration for the inverted residual blocks.
+  """
   def __init__(self, *args, **kwargs):
     self.alpha = 1.0
     self.dropout_rate = 0
     self.config = [
-    # expansion, filters, kernel, stride, se_ratio, activation,       block_id
-        (1,        16,      3,      1,      None,       relu,            0), 
-        (4,        24,      3,      2,      None,       relu,            1), 
-        (3,        24,      3,      1,      None,       relu,            2), 
-        (3,        40,      5,      2,      0.25,       relu,            3), 
-        (3,        40,      5,      1,      0.25,       relu,            4), 
-        (3,        40,      5,      1,      0.25,       relu,            5), 
-        (6,        80,      3,      2,      None,       hard_swish,      6), 
-        (2.5,      80,      3,      1,      None,       hard_swish,      7), 
-        (2.3,      80,      3,      1,      None,       hard_swish,      8), 
-        (2.3,      80,      3,      1,      None,       hard_swish,      9), 
-        (6,        112,     3,      1,      0.25,       hard_swish,      10), 
-        (6,        112,     3,      1,      0.25,       hard_swish,      11), 
-        (6,        160,     5,      2,      0.25,       hard_swish,      12), 
-        (6,        160,     5,      1,      0.25,       hard_swish,      13), 
-        (6,        160,     5,      1,      0.25,       hard_swish,      14), 
+    # expansion, filters, kernel, stride, se_ratio, activation   
+        (1,        16,      3,      1,      None,       relu),
+        (4,        24,      3,      2,      None,       relu),
+        (3,        24,      3,      1,      None,       relu),
+        (3,        40,      5,      2,      0.25,       relu),
+        (3,        40,      5,      1,      0.25,       relu),
+        (3,        40,      5,      1,      0.25,       relu),
+        (6,        80,      3,      2,      None,       hard_swish),
+        (2.5,      80,      3,      1,      None,       hard_swish),
+        (2.3,      80,      3,      1,      None,       hard_swish),
+        (2.3,      80,      3,      1,      None,       hard_swish),
+        (6,        112,     3,      1,      0.25,       hard_swish),
+        (6,        112,     3,      1,      0.25,       hard_swish),
+        (6,        160,     5,      2,      0.25,       hard_swish),
+        (6,        160,     5,      1,      0.25,       hard_swish),
+        (6,        160,     5,      1,      0.25,       hard_swish),
     ]
     self.last_point_ch = 1280
     super().__init__(*args, **kwargs)
