@@ -122,15 +122,18 @@ def metrics_processing(metrics, summary_writers, keys, template, epoch, postfix=
         tf.summary.scalar(sub_key+postfix, value, step=epoch)
   return template
 
-@tf.function
-def summary_gradients(summary_writer, gradients, epoch):
-  """Logs the gradients to TensorBoard for each epoch"""
-  with summary_writer.as_default():
-    for grad in gradients:
-      if 'grad' in grad.name:
-        norm = tf.norm(grad)
-        tf.summary.histogram(grad.name+'_hist', grad, epoch)
-        tf.summary.scalar(grad.name+'_norm', norm, epoch)
+
+def get_summary_gradients(summary_writer):
+  @tf.function
+  def summary_gradients(gradients, epoch):
+    """Logs the gradients to TensorBoard for each epoch"""
+    with summary_writer.as_default():
+      for grad in gradients:
+        if 'grad' in grad.name:
+          norm = tf.norm(grad)
+          tf.summary.histogram(grad.name+'_hist', grad, epoch)
+          tf.summary.scalar(grad.name+'_norm', norm, epoch)
+  return summary_gradients
 
 
 def train(args):
@@ -200,6 +203,8 @@ def train(args):
   train_step = get_train_step_function(model, weights, weight_opt, metrics['train'])
   train_step_arch = get_train_step_arch_function(model, arch_params, arch_opt, metrics['train'], metrics['arch'])
   evaluation_step = get_eval_step_function(model, metrics['val'])
+
+  summary_gradients = get_summary_gradients(summary_writers['arch'])
 
   for epoch in range(latest_epoch, args['num_epochs']):
     print(f'Epoch: {epoch}/{args["num_epochs"]}')
