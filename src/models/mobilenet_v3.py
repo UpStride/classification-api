@@ -78,7 +78,7 @@ def relu(x):
   return tf.nn.relu(x)
 
 def hard_sigmoid(x):
-  return tf.nn.relu6((x + 3.)) * (1. / 6.)
+  return tf.nn.relu6(x + 3.) / 6.
 
 def hard_swish(x):
   return x * hard_sigmoid(x) 
@@ -112,7 +112,7 @@ class _MobileNetV3(GenericModel):
           momentum=BATCH_NORM_MOMEMTUM,
           name=prefix + 'expand/BatchNorm')(
               self.x)
-      self.x = layers.Activation(activation_fn)(self.x)
+      self.x = layers.Activation(activation_fn, name=prefix + '1a_' + activation_fn.__name__)(self.x)
     if stride == 2:
       self.x = layers.ZeroPadding2D(
           padding=correct_pad(self.x, kernel_size),
@@ -132,7 +132,7 @@ class _MobileNetV3(GenericModel):
         momentum=BATCH_NORM_MOMEMTUM,
         name=prefix + 'depthwise/BatchNorm')(
             self.x)
-    self.x = layers.Activation(activation_fn)(self.x)
+    self.x = layers.Activation(activation_fn, name=prefix + activation_fn.__name__)(self.x)
 
     if se_ratio:
       self._se_block(_make_divisble(infilters * expansion), se_ratio, prefix)
@@ -158,35 +158,28 @@ class _MobileNetV3(GenericModel):
     self.last_block_output_shape = filters
 
   def _se_block(self, filters, se_ratio, prefix):
-    inputs = self.x
+    inputs_seblock = self.x
     layers = self.layers()
     self.x = layers.GlobalAveragePooling2D(name=prefix + 'squeeze_excite/AvgPool')(self.x)
-    if tf.keras.backend.image_data_format() == 'channels_first':
-      self.x = layers.Reshape((filters, 1, 1))(self.x)
-    else:
-      self.x = layers.Reshape((1, 1, filters))(self.x)
-    self.x = layers.Conv2D(
+    self.x = layers.Dense(
         _make_divisble(filters * se_ratio),
-        kernel_size=1,
         kernel_regularizer=KERNEL_REGULARIZER,
-        padding='same',
-        name=prefix + 'squeeze_excite/Conv')(
+        name=prefix + 'squeeze_excite/Dense')(
             self.x)
     self.x = layers.ReLU(name=prefix + 'squeeze_excite/Relu')(self.x)
-    self.x = layers.Conv2D(
+    self.x = layers.Dense(
         filters,
-        kernel_size=1,
         kernel_regularizer=KERNEL_REGULARIZER,
-        padding='same',
-        name=prefix + 'squeeze_excite/Conv_1')(
+        name=prefix + 'squeeze_excite/Dense_1')(
             self.x)
-    self.x = layers.Activation(hard_sigmoid)(self.x)
-    self.x = layers.Multiply(name=prefix + 'squeeze_excite/Mul')([inputs, self.x])
+    self.x = layers.Activation(hard_sigmoid, name=prefix + 'squeeze_excite/Hard_Sigmoid')(self.x)
+    self.x = layers.Multiply(name=prefix + 'squeeze_excite/Mul')([inputs_seblock, self.x])
 
   def model(self):
     self.x = self.layers().Conv2D(
         16 // self.factor,
         kernel_size=3,
+        kernel_regularizer=KERNEL_REGULARIZER,
         strides=(2, 2),
         padding='same',
         use_bias=False,
@@ -194,7 +187,7 @@ class _MobileNetV3(GenericModel):
     self.x = self.layers().BatchNormalization(
         axis=self.channel_axis, epsilon=1e-3,
         momentum=BATCH_NORM_MOMEMTUM, name='Conv/BatchNorm')(self.x)
-    self.x = self.layers().Activation(hard_swish, name='hard_swish')(self.x)
+    self.x = self.layers().Activation(hard_swish, name='Conv/Hard_Swish')(self.x)
 
     for i, layer in enumerate(self.config):
       self._inverted_res_block(
@@ -202,7 +195,7 @@ class _MobileNetV3(GenericModel):
         _make_divisble(layer[1] * self.alpha) // self.factor, # filters
         layer[2], # kernel
         layer[3], # stride
-        layer[4], # se_ration
+        layer[4], # se_ratio
         layer[5], # activation
         i  # block_id
         )
@@ -216,7 +209,7 @@ class _MobileNetV3(GenericModel):
     # if the width multiplier is greater than 1 we
     # increase the number of output channels
     if self.alpha > 1.0: 
-      self.last_point_ch = _make_divisble(self.last_point_ch * self.alpha) // self.factor
+      self.last_point_ch = _make_divisble(self.last_point_ch * self.alpha)
     self.x = self.layers().Conv2D(
         last_conv_ch,
         kernel_size=1,
@@ -227,7 +220,7 @@ class _MobileNetV3(GenericModel):
     self.x = self.layers().BatchNormalization(
         axis=self.channel_axis, epsilon=1e-3,
         momentum=BATCH_NORM_MOMEMTUM, name='Conv_1/BatchNorm')(self.x)
-    self.x = self.layers().Activation(hard_swish)(self.x)
+    self.x = self.layers().Activation(hard_swish, name='Conv_1/Hard_Swish')(self.x)
     
     self.x = self.layers().GlobalAveragePooling2D()(self.x)
     if self.channel_axis == 1:
@@ -242,17 +235,16 @@ class _MobileNetV3(GenericModel):
         kernel_size=1,
         kernel_regularizer=KERNEL_REGULARIZER,
         padding='same',
-        use_bias=True,
+        use_bias=False,
         name='Conv_2')(self.x)
-    self.x = self.layers().Activation(hard_swish)(self.x)
+    self.x = self.layers().Activation(hard_swish, name='Conv_2/Hard_Swish')(self.x)
 
-    self.x = self.layers().Conv2D(
-        self.label_dim, 
-        kernel_size=1, 
-        kernel_regularizer=KERNEL_REGULARIZER,
-        padding='same', 
-        name='Logits')(self.x)
     self.x = self.layers().Flatten()(self.x)
+    self.x = self.layers().Dense(
+        self.label_dim, 
+        use_bias=True,
+        kernel_regularizer=KERNEL_REGULARIZER,
+        name='Logits')(self.x)
 
   
 class MobileNetV3Small(_MobileNetV3):
@@ -276,9 +268,10 @@ class MobileNetV3Small(_MobileNetV3):
     self.dropout_rate = 0
     self.config = [
     
-    # TODO plan to replace with strings
+    # TODO plan to replace activation with strings
     # expansion, filters, kernel, stride, se_ratio, activation
-        (1,        16,      3,      2,      0.25,       relu), 
+    # paper 0.25 at the first block, using make divisble makes filters to 8 rather 16 and causing dimension issue at Multiply
+        (1,        16,      3,      2,      None,       relu), 
         (4.5,      24,      3,      2,      None,       relu), 
         (3.66,     24,      3,      1,      None,       relu), 
         (4,        40,      5,      2,      0.25,       hard_swish), 
