@@ -215,6 +215,17 @@ def train(args):
     if epoch >= args['arch_search']['num_warmup']:
       # Updating the architectural parameters on another subset
       for step, (x_batch, y_batch) in tqdm.tqdm(enumerate(train_arch_dataset, start=1)):
+        if args['arch_search']['optimizer']['name'] in ['sgd_momentum', 'sgd_nesterov']:
+          if  step == 1:
+            # reset the velocity in the 1st iteration of each epoch of sgd momentum (with or without nestrov)
+            arch_opt.momentum = 0.
+            if args['arch_search']['optimizer']['name'] == 'sgd_momentum':
+              arch_opt.learning_rate = arch_opt.learning_rate  * (1.+args['arch_search']['optimizer']['momentum'])
+          if step == 2:
+            # start  using the velocity again from the 2nd iterationin in sgd momentum (with or without nestrov)
+            arch_opt.momentum = args['arch_search']['optimizer']['momentum']
+            if args['arch_search']['optimizer']['name'] == 'sgd_momentum':
+              arch_opt.learning_rate = arch_opt.learning_rate / (1.+args['arch_search']['optimizer']['momentum'])
         train_step_arch(x_batch, y_batch)
       # Evaluate the model on validation subset
       for x_batch, y_batch in val_dataset:
