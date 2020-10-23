@@ -95,6 +95,7 @@ def get_train_step_arch_function(model, arch_params, arch_opt, train_metrics, ar
     # Update the architecture paramaters
     grads = tape.gradient(total_loss, arch_params)
     arch_opt.apply_gradients(zip(grads, arch_params))
+    return grads
   return train_step_arch
 
 
@@ -120,6 +121,16 @@ def metrics_processing(metrics, summary_writers, keys, template, epoch, postfix=
         template += f", {key}_{sub_key}: {value}"
         tf.summary.scalar(sub_key+postfix, value, step=epoch)
   return template
+
+@tf.function
+def summary_gradients(summary_writer, gradients, epoch):
+  """Logs the gradients to TensorBoard for each epoch"""
+  with summary_writer.as_default():
+    for grad in gradients:
+      if 'grad' in grad.name:
+        norm = tf.norm(grad)
+        tf.summary.histogram(grad.name+'_hist', grad, epoch)
+        tf.summary.scalar(grad.name+'_norm', norm, epoch)
 
 
 def train(args):
@@ -226,7 +237,9 @@ def train(args):
             arch_opt.momentum = args['arch_search']['optimizer']['momentum']
             if args['arch_search']['optimizer']['name'] == 'sgd_momentum':
               arch_opt.learning_rate = arch_opt.learning_rate / (1.+args['arch_search']['optimizer']['momentum'])
-        train_step_arch(x_batch, y_batch)
+        gradients = train_step_arch(x_batch, y_batch)
+      # Create summary of the gradients
+      summary_gradients(summary_writers['arch'], gradients, epoch)
       # Evaluate the model on validation subset
       for x_batch, y_batch in val_dataset:
         evaluation_step(x_batch, y_batch)
