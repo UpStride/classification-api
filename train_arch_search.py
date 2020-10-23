@@ -33,6 +33,7 @@ arguments = [
     [bool, 'log_arch', False, 'if true then save the values of the alpha parameters after every epochs in a csv file in log directory'],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
     [str, 'framework', 'tensorflow', 'Framework to use to define the model', lambda x: x in framework_list],
+    [bool, 'single_step_training', False, "if true then train arch and weight in a single pass"]
 ] + global_conf.arguments + training.arguments
 
 
@@ -97,6 +98,31 @@ def get_train_step_arch_function(model, arch_params, arch_opt, train_metrics, ar
     arch_opt.apply_gradients(zip(grads, arch_params))
     return grads
   return train_step_arch
+
+
+def get_train_sep_arch_weights(model, params, opt, train_metrics, arch_metrics):
+  latency_reg_loss_metric = arch_metrics['latency_reg_loss']
+  train_accuracy_metric = train_metrics['accuracy']
+  train_cross_entropy_loss_metric = train_metrics['cross_entropy_loss']
+  total_loss_metric = train_metrics['total_loss']
+
+  @tf.function
+  def train_step(x_batch, y_batch):
+    with tf.GradientTape() as tape:
+      y_hat = model(x_batch, training=True)
+      cross_entropy_loss = tf.reduce_mean(tf.keras.losses.categorical_crossentropy(y_batch, y_hat))
+      weight_reg_loss = tf.reduce_sum(model.losses)
+      latency_reg_loss = losses.parameters_loss(model) / 1.0e6
+      total_loss = cross_entropy_loss + weight_reg_loss
+    latency_reg_loss_metric.update_state(latency_reg_loss)
+    train_accuracy_metric.update_state(y_batch, y_hat)
+    train_cross_entropy_loss_metric.update_state(cross_entropy_loss)
+    total_loss_metric.update_state(total_loss)
+    # Update the architecture paramaters
+    grads = tape.gradient(total_loss, params)
+    opt.apply_gradients(zip(grads, params))
+    return grads
+  return train_step
 
 
 def get_eval_step_function(model, metrics):
@@ -200,8 +226,11 @@ def train(args):
       }
   }
 
-  train_step = get_train_step_function(model, weights, weight_opt, metrics['train'])
-  train_step_arch = get_train_step_arch_function(model, arch_params, arch_opt, metrics['train'], metrics['arch'])
+  if not args['single_step_training']:
+    train_step = get_train_step_function(model, weights, weight_opt, metrics['train'])
+    train_step_arch = get_train_step_arch_function(model, arch_params, arch_opt, metrics['train'], metrics['arch'])
+  else:
+    train_step = get_train_sep_arch_weights(model, weights + arch_params, weight_opt, metrics['train'], metrics['arch'])
   evaluation_step = get_eval_step_function(model, metrics['val'])
 
   summary_gradients = get_summary_gradients(summary_writers['arch'])
@@ -228,15 +257,15 @@ def train(args):
       tf.summary.scalar('temperature', new_temperature, step=epoch)
     define_temperature(new_temperature)
 
-    if epoch >= args['arch_search']['num_warmup']:
+    if epoch >= args['arch_search']['num_warmup'] and not args['single_step_training']:
       # Updating the architectural parameters on another subset
       for step, (x_batch, y_batch) in tqdm.tqdm(enumerate(train_arch_dataset, start=1)):
         if args['arch_search']['optimizer']['name'] in ['sgd_momentum', 'sgd_nesterov']:
-          if  step == 1:
+          if step == 1:
             # reset the velocity in the 1st iteration of each epoch of sgd momentum (with or without nestrov)
             arch_opt.momentum = 0.
             if args['arch_search']['optimizer']['name'] == 'sgd_momentum':
-              arch_opt.learning_rate = arch_opt.learning_rate  * (1.+args['arch_search']['optimizer']['momentum'])
+              arch_opt.learning_rate = arch_opt.learning_rate * (1.+args['arch_search']['optimizer']['momentum'])
           if step == 2:
             # start  using the velocity again from the 2nd iterationin in sgd momentum (with or without nestrov)
             arch_opt.momentum = args['arch_search']['optimizer']['momentum']
@@ -244,7 +273,7 @@ def train(args):
               arch_opt.learning_rate = arch_opt.learning_rate / (1.+args['arch_search']['optimizer']['momentum'])
         gradients = train_step_arch(x_batch, y_batch)
       # Create summary of the gradients
-      summary_gradients(summary_writers['arch'], gradients, epoch)
+      summary_gradients(gradients, epoch)
       # Evaluate the model on validation subset
       for x_batch, y_batch in val_dataset:
         evaluation_step(x_batch, y_batch)
