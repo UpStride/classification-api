@@ -59,18 +59,16 @@ class Layer:
 
 
 class GenericModel:
-  def __init__(self, framework: str, factor=1, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, output_layer_before_up2tf=False, tf2up_strategy='',  up2tf_strategy='default', cpu=False, hp=None, load_searched_arch=None):
+  def __init__(self, framework: str, conversion_params, factor=1, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False, hp=None, load_searched_arch=None):
     """[summary]
 
     Args:
+        conversion_params (dict): containing the params for TF2UpStride & UpStride2TF conversion
         framework (str): [description]
         factor (int, optional): [description]. Defaults to 1.
         input_shape (tuple, optional): [description]. Defaults to (224, 224, 3).
         label_dim (int, optional): [description]. Defaults to 1000.
         n_layers_before_tf (int, optional): [description]. Defaults to 0.
-        output_layer_before_up2tf (bool): Whether to use final output layer before UpStride2TF conversion or not, Default False.
-        tf2up_strategy: (string): TF2UpStride conversion strategy 
-        up2tf_strategy: (string): UpStride2TF conversion strategy
         cpu (bool, optional): [description]. Defaults to False.
         hp ([type], optional): [description]. Defaults to None.
         load_searched_arch (str, optional): Yaml file that provide the model definition found by DNAS. Defaults to None.
@@ -80,9 +78,9 @@ class GenericModel:
     self._previous_layer = tf.keras.layers
     inputs = tf.keras.layers.Input(shape=input_shape)
     self.x = inputs
-    self.output_layer_before_up2tf = output_layer_before_up2tf
-    self.tf2up_strategy = tf2up_strategy
-    self.up2tf_strategy = up2tf_strategy
+    self.output_layer_before_up2tf = conversion_params['output_layer_before_up2tf']
+    self.tf2up_strategy = conversion_params['tf2up_strategy']
+    self.up2tf_strategy = conversion_params['up2tf_strategy']
     self.weight_regularizer = None
 
     self.factor = factor
