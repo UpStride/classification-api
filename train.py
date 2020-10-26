@@ -24,6 +24,7 @@ arguments = [
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture', ],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
+    [bool, "use_wandb", False, 'enable if we want to utilize weights and biases'],
 ] + global_conf.arguments + training.arguments
 
 
@@ -32,6 +33,10 @@ def main():
   """
   args = argparse.parse_cmd(arguments)
   args['server'] = alchemy_api.start_training(args['server'])
+  if args['use_wandb']:
+    import wandb
+    wandb.init(project="project0", config=args)
+    args = wandb.config
   train(args)
 
 
@@ -61,6 +66,8 @@ def get_experiment_name(args):
   return experiment_dir
 
 
+
+
 def train(args):
   print(args)
   global_conf.config_tf2(args)
@@ -80,6 +87,9 @@ def train(args):
   callbacks.append(model_checkpoint_cb)
   if args['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(args['server']))
+  if args['use_wandb']:
+    from wandb.keras import WandbCallback
+    callbacks.append(WandbCallback())
   model.fit(x=train_dataset,
             validation_data=val_dataset,
             epochs=args['num_epochs'],
