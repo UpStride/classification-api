@@ -33,7 +33,7 @@ def main():
   """
   args = argparse.parse_cmd(arguments)
   args['server'] = alchemy_api.start_training(args['server'])
-  if args['use_wandb']:
+  if args['use_wandb'] and "tensorflow" in args['framework']:
     import wandb
     wandb.init(project="project0", config=args)
     args = wandb.config
