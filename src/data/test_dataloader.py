@@ -22,10 +22,11 @@ class TestDataLoader(unittest.TestCase):
     map_fn = dataloader.get_map_fn(transformation_list, config, n_classes=2)
     dataset_dir = create_fake_dataset()
     image = cv2.imread(os.path.join(dataset_dir, 'dog/1.jpg'))
-    image, label = map_fn(tf.convert_to_tensor(image), tf.convert_to_tensor(1))
+    image = tf.convert_to_tensor(image)
+    image, label = map_fn(image, tf.convert_to_tensor(1))
     self.assertEqual(label.numpy()[0], 0)
     self.assertEqual(label.numpy()[1], 1)
-    self.assertTrue(np.array_equal(image.numpy(), np.ones((224, 224, 3) , dtype=np.float32)*255))
+    self.assertTrue(np.allclose(image.numpy(), np.ones((224, 224, 3) , dtype=np.float32)*255))
 
   def test_get_dataset_from_tfds(self):
     config = {

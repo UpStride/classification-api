@@ -51,7 +51,7 @@ arguments = [
         ['list[float]', "contrast", [0.7, 1.3], 'contrast range to jitter'],
         ['list[float]', "saturation", [0.6, 1.6], 'saturation range to jitter'],
         [float, "hue", 0.08, 'hue factor to jitter'],
-        ['list[float]', "clip", [0., 1.0], 'clipping range, if both (min, max) are 0, no clipping will be performed']
+        ['list[float]', "clip", [0., 0.], 'clipping range, if both (min, max) are 0, no clipping will be performed']
     ]],
     ['namespace', 'RandomRotate', [
         [int, "angle", 10, 'angle will be selected randomly within range [-angle, angle]'],

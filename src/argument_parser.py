@@ -10,10 +10,13 @@ training_arguments_das = [
         [int, 'decay_steps', 1, 'decay steps']
     ]],
 
-    ['namespace', 'arch_optimizer_param', [
+    ['namespace', 'optimizer', [
         [str, 'name', 'adam', 'optimize to be used for updating architecture parameters for search', lambda x: x.lower() in optimizer_list],
         [float, "lr", 0.1, 'learning rate', lambda x: x > 0],
         [float, 'momentum', 0.9, 'used when optimizer name is specified as sgd_momentum'],
     ]],
-    [str, 'exported_architecture', 'export.yml', 'file to write the exported architecture']
+    [str, 'exported_architecture', 'export.yml', 'file to write the exported architecture'],
+    [float, 'weight_decay', 1e-4, 'weight decay rate'],
+    [float, 'arch_param_decay', 5e-4, 'weight decay rate for architecture parameters'],
+    [int, 'num_warmup', 10, 'number of warmup epoch']
 ]
