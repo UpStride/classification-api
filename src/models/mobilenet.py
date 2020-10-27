@@ -44,6 +44,7 @@ class _MobileNetV2(GenericModel):
   def __init__(self, *args, **kwargs):
     self.last_block_output_shape = 3
     self.bn_axis = 1 if is_channel_fist else -1
+    self.weight_regularizer = weight_regularizer
     super().__init__(*args, **kwargs)
 
   def _inverted_res_block(self, expansion, stride, alpha, filters, block_id):
@@ -128,7 +129,8 @@ class _MobileNetV2(GenericModel):
     self.x = self.layers().ReLU(6., name='out_relu')(self.x)
 
     self.x = self.layers().GlobalAveragePooling2D()(self.x)
-    self.x = self.layers().Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=weight_regularizer)(self.x)
+
+#    self.x = self.layers().Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=weight_regularizer)(self.x)
 
 
 class MobileNetV2(_MobileNetV2):

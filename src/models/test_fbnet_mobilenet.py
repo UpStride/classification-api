@@ -44,6 +44,7 @@ class TestFBnetMobileNet(unittest.TestCase):
     print(self.img[1:])
     model = FBNet_MobileNetV2Imagenet(
       'tensorflow',
+      conversion_params={'output_layer_before_up2tf': False, 'tf2up_strategy': '', 'up2tf_strategy': 'default'},
       factor=1,
       input_shape=self.img.shape[1:],
       label_dim=10,
