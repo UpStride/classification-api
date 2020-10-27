@@ -1,32 +1,15 @@
 import zmq
-import imagezmq
-import base64
-import socket
 import numpy as np
 import tensorflow as tf
 import upstride_argparse as argparse
-from keras.preprocessing import image
 from src.data import dataloader, augmentations
 from src.models.generic_model import framework_list
 from src.models import model_name_to_class
 from submodules.global_dl import global_conf
-import matplotlib.pyplot as plt
 
 args_spec = [
-    # ['list[str]', "yaml_config", [], "config file overriden by these argparser parameters"],
-
-    # framework specification
-    # [str, 'framework', 'tensorflow', 'Framework to use to define the model', lambda x: x in framework_list],
-
     # model specification
-    # [str, "model_name", None, 'Specify the name of the model', lambda x: x in model_name_to_class],
-    # [int, "factor", 1, 'division factor to scale the number of channel. factor=2 means the model will have half the number of channels compare to default implementation'],
-    # [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
     [int, "num_classes", 0, 'Number of classes', lambda x: x > 0],
-    # ['list[int]', "input_size", [224, 224, 3], 'processed shape of each image'],
-
-    # checkpoints directory
-    # [str, "checkpoint_dir", None, 'Checkpoints directory to load the trained model from'],
 
     # dataloader specification to run inference on a public dataset
     ['namespace', 'dataloader', [
@@ -38,7 +21,7 @@ args_spec = [
     ] + augmentations.arguments],
 
     # other stuff to resolve the experiment name
-    # ['namespace', 'configuration', [[bool, "with_mixed_precision", False, 'To train with mixed precision']]],
+    ['namespace', 'configuration', [[bool, "with_mixed_precision", False, 'To train with mixed precision']]],
 
     [int, 'zmq_port', 5555, 'Specify the port to connect the ZMQ socket', lambda x: x > 0],
 ] + global_conf.arguments
@@ -51,51 +34,45 @@ def get_dataset(args):
   return dataset
 
 
-def create_socket(port):
+def create_zmq_socket(port):
   context = zmq.Context()
-
   socket = context.socket(zmq.REQ)
   socket.connect("tcp://localhost:" + str(port))
   return socket
 
 
-def send_dataset(dataset, args, use_imagezmq = False):
-  if use_imagezmq:
-    sender = imagezmq.ImageSender(connect_to='tcp://localhost:' + str(args['zmq_port']))
-    sender_name = 'Albert' # socket.gethostname()
+def send_and_evaluate_record(record, socket):
+  img = record[0].numpy()
+  val = record[1].numpy()
 
-    i = 0
+  socket.send(img)
+  reply = socket.recv()
 
-    for img in dataset:
-      i = i + 1
+  res = np.frombuffer(reply, dtype='float32').reshape(val.shape)
 
-      print(img[0])
+  images = val.shape[0]
+  correct = [val[j][np.argmax(res[j])] == 1 for j in range(images)].count(True)
+  
+  return images, correct
 
-      reply = sender.send_image(sender_name, img[0].numpy())
-      res = np.frombuffer(reply, dtype='float32')
-      print(res)
-      break
 
-      if i == 10:
-        break
+def send_and_evaluate_dataset(dataset, socket):
+  sent_records_count = 0
+  logging_frequency = 1000
+  correct_count = 0
+  images_count = 0
+  for record in dataset:
+    if sent_records_count % logging_frequency == 0:
+      print("sent_records_count: " + str(sent_records_count))
 
-  else:
-    socket = create_socket(args['zmq_port'])
+    images, correct = send_and_evaluate_record(record, socket)
+    images_count = images_count + images
+    correct_count = correct_count + correct
 
-    i = 0
-    for img in dataset:
-      i = i + 1
+    sent_records_count = sent_records_count + 1
 
-      socket.send(img[0].numpy())
-      reply = socket.recv()
-
-      res = np.frombuffer(reply, dtype='float32')
-      print(res)
-      break
-
-      if i == 10:
-        break
-
+  print("Total records sent: " + str(sent_records_count))
+  return images_count, correct_count
 
 def main():
 
@@ -106,11 +83,11 @@ def main():
   global_conf.config_tf2(args)
 
   if args['dataloader']['name'] is not None:
-    # evaluate_dataset(args, model)
-
     dataset = get_dataset(args)
-    send_dataset(dataset, args)
-
+    socket = create_zmq_socket(args['zmq_port'])
+    images_count, correct_count = send_and_evaluate_dataset(dataset, socket)
+    accuracy = correct_count / images_count
+    print("Accuracy of the remote model: " + str(accuracy))
 
 if __name__ == '__main__':
   main()

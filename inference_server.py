@@ -1,17 +1,12 @@
 import os
-import zmq # or use imagezmq
-import imagezmq
-import base64
+import zmq
+import numpy as np
 import tensorflow as tf
 import upstride_argparse as argparse
 from src.data import dataloader, augmentations
 from src.models.generic_model import framework_list
 from src.models import model_name_to_class
 from submodules.global_dl import global_conf
-from keras.preprocessing import image
-import numpy as np
-import PIL.Image as Image
-import io
 
 
 args_spec = [
@@ -53,7 +48,6 @@ def create_model(args):
                                                   args['num_classes'],
                                                   args['n_layers_before_tf'], False).model
   model.compile(loss='categorical_crossentropy', metrics=['accuracy', 'top_k_categorical_accuracy'])
-  model.summary()
   return model
 
 
@@ -76,32 +70,28 @@ def evaluate_dataset(args, model):
     model.evaluate(dataset)
 
 
-def create_socket(zmq_port):
+def create_zmq_socket(zmq_port):
   context = zmq.Context()
-
   socket = context.socket(zmq.REP)
   socket.bind("tcp://*:" + str(zmq_port))
   return socket
 
 
-def process_incoming(args, model, use_imagezmq = False):
-  if use_imagezmq:
-    image_hub = imagezmq.ImageHub()
-    while True:
-      sender_name, img = image_hub.recv_image()
-      res = model.predict(img)[0]
-      image_hub.send_reply(res)
-      break
+def process_incoming_image_batches(model, shape, socket):
+  received_messages_count = 0
+  logging_frequency = 1000
 
-  else:
-    socket = create_socket(args['zmq_port'])
+  while True:
+    if received_messages_count % logging_frequency == 0:
+      print("received_messages_count: " + str(received_messages_count))
 
-    while True:
-      message = socket.recv()
-      img = np.frombuffer(message, dtype='float32')
-      img = img.reshape((1, 224, 224, 3))
-      res = model.predict(img)[0]
-      socket.send(res)
+    message = socket.recv()
+    img = np.frombuffer(message, dtype='float32')
+    img = img.reshape(np.concatenate(([-1], shape)))
+    res = model.predict(img)
+    socket.send(res)
+    
+    received_messages_count = received_messages_count + 1
 
 
 def main():
@@ -115,16 +105,18 @@ def main():
 
   # instantiate model
   model = create_model(args)
+  model.summary()
 
   # load a checkpoint
-  # load_checkpoint(args, model)
+  load_checkpoint(args, model)
 
   # if dataloader.name is set, evaluating on a specific dataset
   if args['dataloader']['name'] is not None:
     evaluate_dataset(args, model)
 
   else:
-    process_incoming(args, model)
+    socket = create_zmq_socket(args['zmq_port'])
+    process_incoming_image_batches(model, args['input_size'], socket)
 
 
 if __name__ == '__main__':
