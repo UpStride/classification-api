@@ -233,8 +233,7 @@ class AuxiliaryHeadImageNet(DataFormatHandler):
 
 
 class NetworkImageNet(DataFormatHandler):
-  def model(self, C=46, num_classes=1000, layers=14, auxiliary=False, genotype="PDARTS"):
-  # def __init__(self, C, num_classes, layers, auxiliary, genotype):
+  def __init__(self, C, num_classes, layers, auxiliary, genotype):
     genotype = eval("%s" % genotype)
     super(NetworkImageNet, self).__init__()
     self._layers = layers
@@ -242,7 +241,6 @@ class NetworkImageNet(DataFormatHandler):
 
     kwargs = {'data_format' : self.data_format}
     self.stem0 = Sequential([
-      # tfk.Input(shape=(3, some_height, some_width)), # TBD
       Conv2D(C // 2, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False, **kwargs),
       BatchNormalization(axis=self.axis),
       ReLU(),
@@ -289,3 +287,12 @@ class NetworkImageNet(DataFormatHandler):
     out = self.global_pooling(s1)
     logits = self.classifier(out.view(out.size(0), -1))
     return logits, logits_aux
+
+
+class Pdart(GenericModel):
+  def model(self, C=46, num_classes=1000, layers=14, auxiliary=False, genotype="PDARTS"):
+    network_image_net = NetworkImageNet(C, num_classes, layers, auxiliary, genotype)
+    self.x = self.layers().network_image_net.call(self.x) # TODO network_image_net.call(self.x) returns 2 values. self.layers() is not happy with that
+    # TODO self.training
+    # TODO self.drop_path_prob
+    # TODO self.layers()
