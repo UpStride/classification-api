@@ -25,6 +25,7 @@ arguments = [
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture', ],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
     [bool, "use_wandb", False, 'enable if we want to utilize weights and biases'],
+    [str, 'project', 'project0', 'Unique project name within which the training runs are executed in wandb',]
 ] + global_conf.arguments + training.arguments
 
 
@@ -35,7 +36,7 @@ def main():
   args['server'] = alchemy_api.start_training(args['server'])
   if args['use_wandb'] and "tensorflow" in args['framework']:
     import wandb
-    wandb.init(project="project0", config=args)
+    wandb.init(project=args['project'], config=args)
     args = wandb.config
   train(args)
 
@@ -87,7 +88,7 @@ def train(args):
   callbacks.append(model_checkpoint_cb)
   if args['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(args['server']))
-  if args['use_wandb']:
+  if args['use_wandb'] and 'tensorflow' in args['framework']:
     from wandb.keras import WandbCallback
     callbacks.append(WandbCallback())
   model.fit(x=train_dataset,
