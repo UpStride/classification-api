@@ -30,31 +30,20 @@ def correct_pad(inputs, kernel_size):
   Returns:
       A tuple.
   """
-  img_dim = 1
   if type(inputs) == list:
     inputs = inputs[0]
-  if is_channel_fist:
-    input_size = tf.keras.backend.int_shape(inputs)[img_dim+1:(img_dim + 3)]
-  else:
-    input_size = tf.keras.backend.int_shape(inputs)[img_dim+1:(img_dim + 3)]
-
+  input_size = inputs.shape[2:4] if is_channel_fist else inputs.shape[1:3]
   if isinstance(kernel_size, int):
     kernel_size = (kernel_size, kernel_size)
-
-  if input_size[0] is None:
-    adjust = (1, 1)
-  else:
-    adjust = (1 - input_size[0] % 2, 1 - input_size[1] % 2)
-
+  adjust = (1, 1) if input_size[0] is None else (1 - input_size[0] % 2, 1 - input_size[1] % 2)
   correct = (kernel_size[0] // 2, kernel_size[1] // 2)
-
-  return ((correct[0] - adjust[0], correct[0]),
-          (correct[1] - adjust[1], correct[1]))
+  return ((correct[0] - adjust[0], correct[0]), (correct[1] - adjust[1], correct[1]))
 
 
 class _MobileNetV2(GenericModel):
   def __init__(self, *args, **kwargs):
     self.last_block_output_shape = 3
+    self.bn_axis = 1 if is_channel_fist else -1
     self.weight_regularizer = weight_regularizer
     super().__init__(*args, **kwargs)
 
@@ -70,7 +59,7 @@ class _MobileNetV2(GenericModel):
     if block_id:
       # Expand
       self.x = layers.Conv2D((expansion * in_channels), kernel_size=1, padding='same', use_bias=False, name=prefix + 'expand', kernel_regularizer=weight_regularizer)(self.x)
-      self.x = layers.BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'expand_BN')(self.x)
+      self.x = layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'expand_BN')(self.x)
       self.x = layers.ReLU(6., name=prefix + 'expand_relu')(self.x)
     else:
       prefix = 'expanded_conv_'
@@ -80,14 +69,14 @@ class _MobileNetV2(GenericModel):
       self.x = layers.ZeroPadding2D(padding=correct_pad(self.x, 3), name=prefix + 'pad')(self.x)
     self.x = layers.DepthwiseConv2D(kernel_size=3, strides=stride, activation=None, use_bias=False, padding='same' if stride == 1 else 'valid',
                                     name=prefix + 'depthwise', kernel_regularizer=weight_regularizer)(self.x)
-    self.x = layers.BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'depthwise_BN')(self.x)
+    self.x = layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'depthwise_BN')(self.x)
 
     self.x = layers.ReLU(6., name=prefix + 'depthwise_relu')(self.x)
 
     # Project
     self.x = layers.Conv2D(pointwise_filters, kernel_size=1, padding='same', use_bias=False, activation=None,
                            name=prefix + 'project', kernel_regularizer=weight_regularizer)(self.x)
-    self.x = layers.BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'project_BN')(self.x)
+    self.x = layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'project_BN')(self.x)
 
     if in_channels == pointwise_filters and stride == 1:
       self.x = layers.Add(name=prefix + 'add')([inputs, self.x])
@@ -114,7 +103,7 @@ class _MobileNetV2(GenericModel):
     self.x = self.layers().ZeroPadding2D(padding=correct_pad(self.x, 3), name='Conv1_pad')(self.x)
     self.x = self.layers().Conv2D(first_block_filters, kernel_size=3, strides=self.fist_conv_stride, padding='valid',
                                   use_bias=False, name='Conv1', kernel_regularizer=weight_regularizer)(self.x)
-    self.x = self.layers().BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name='bn_Conv1')(self.x)
+    self.x = self.layers().BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name='bn_Conv1')(self.x)
     self.x = self.layers().ReLU(6., name='Conv1_relu')(self.x)
 
     self.last_block_output_shape = first_block_filters
@@ -136,7 +125,7 @@ class _MobileNetV2(GenericModel):
     last_block_filters = last_block_filters // self.factor
 
     self.x = self.layers().Conv2D(last_block_filters, kernel_size=1, use_bias=False, name='Conv_1', kernel_regularizer=weight_regularizer)(self.x)
-    self.x = self.layers().BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name='Conv_1_bn')(self.x)
+    self.x = self.layers().BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name='Conv_1_bn')(self.x)
     self.x = self.layers().ReLU(6., name='out_relu')(self.x)
 
     self.x = self.layers().GlobalAveragePooling2D()(self.x)
