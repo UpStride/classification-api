@@ -78,6 +78,8 @@ def train(args):
                                          num_classes=args["num_classes"], split=args['dataloader']['train_split_id'])
   val_dataset = dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['val_list'],
                                        num_classes=args["num_classes"], split=args['dataloader']['val_split_id'])
+  test_dataset = dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['val_list'],
+                                       num_classes=args["num_classes"], split='test')
 
   setup_mp(args)
   model, _ = define_model_in_strategy(args, get_model)
@@ -101,6 +103,8 @@ def train(args):
   print("export model")
   export.export(model, export_dir, args)
   print("Training Completed!!")
+  model.evaluate(test_dataset, batch_size=args['dataloader']['batch_size'])
+  print("Evaluation Completed!!")
 
 
 if __name__ == '__main__':
