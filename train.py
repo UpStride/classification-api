@@ -22,11 +22,16 @@ arguments = [
     [str, 'framework', 'tensorflow', 'Framework to use to define the model', lambda x: x in framework_list],
     [int, "factor", 1, 'division factor to scale the number of channel. factor=2 means the model will have half the number of channels compare to default implementation'],
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
-    [str, 'load_searched_arch', '', 'model definition file containing the searched architecture', ],
+    [str, 'load_searched_arch', '', 'model definition file containing the searched architecture'],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
     [bool, "use_wandb", False, 'enable if we want to utilize weights and biases'],
     [str, 'project', 'project0', 'Unique project name within which the training runs are executed in wandb',],
     [str, 'run_name', '', 'Unique run name within which the training runs are executed in wandb',],
+    ['namespace', 'conversion_params', [
+        [bool, 'output_layer_before_up2tf', False, 'Whether to use final output layer before UpStride2TF conversion or not'],
+        [str, 'tf2up_strategy', '', 'TF2UpStride conversion strategy'],
+        [str, 'up2tf_strategy', 'default', 'UpStride2TF conversion strategy']
+    ]],
 ] + global_conf.arguments + training.arguments
 
 
@@ -45,6 +50,7 @@ def main():
 def get_model(args):
   load_arch = args['load_searched_arch'] if args['load_searched_arch'] else None
   model = model_name_to_class[args['model_name']](args['framework'],
+                                                  args['conversion_params'],
                                                   args['factor'],
                                                   args['input_size'],
                                                   args['num_classes'],

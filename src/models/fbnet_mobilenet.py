@@ -20,6 +20,7 @@ class _FBNet_MobileNetV2(GenericModel):
     """
     self.last_block_output_shape = 3
     self.load_searched_arch = load_searched_arch
+    self.weight_regularizer = weight_regularizer
     
     if self.load_searched_arch:
       if tf.io.gfile.exists(self.load_searched_arch):
@@ -136,7 +137,7 @@ class _FBNet_MobileNetV2(GenericModel):
     self.x = self.layers().ReLU(6., name='out_relu')(self.x)
 
     self.x = self.layers().GlobalAveragePooling2D()(self.x)
-    self.x = self.layers().Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=weight_regularizer)(self.x)
+    # self.x = self.layers().Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=weight_regularizer)(self.x)
 
 
 
