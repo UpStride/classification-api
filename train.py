@@ -25,7 +25,8 @@ arguments = [
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture', ],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
     [bool, "use_wandb", False, 'enable if we want to utilize weights and biases'],
-    [str, 'project', 'project0', 'Unique project name within which the training runs are executed in wandb',]
+    [str, 'project', 'project0', 'Unique project name within which the training runs are executed in wandb',],
+    [str, 'run_name', '', 'Unique run name within which the training runs are executed in wandb',],
 ] + global_conf.arguments + training.arguments
 
 
@@ -36,7 +37,7 @@ def main():
   args['server'] = alchemy_api.start_training(args['server'])
   if args['use_wandb'] and "tensorflow" in args['framework']:
     import wandb
-    wandb.init(project=args['project'], config=args)
+    wandb.init(name= args['run_name'], project=args['project'], config=args)
     args = wandb.config
   train(args)
 
