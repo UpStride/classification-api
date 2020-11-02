@@ -1,7 +1,7 @@
 FROM eu.gcr.io/fluid-door-230710/upstride:py-1.1.1-tf2.3.0-gpu
 
 RUN apt-get update && \
-    apt-get install -y libsm6 libxrender1 libxext6 libgl1-mesa-glx && \
+    apt-get install -y libsm6 libxrender1 libxext6 libgl1-mesa-glx vim && \
     pip install \
     opencv-python \
     pyyaml \
@@ -9,6 +9,7 @@ RUN apt-get update && \
     upstride_argparse \
     keras-tuner \
     pandas \
+    wandb \
     tensorflow_addons && \
     rm -rf /var/lib/apt/lists/*
 
