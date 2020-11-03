@@ -41,13 +41,16 @@ OPS = {
 def drop_path(x, drop_prob):
   if drop_prob > 0.:
     keep_prob = 1. - drop_prob
-    print("   HELLO")
-    try:
-      mask = tf.keras.backend.random_bernoulli([x.shape[0], 1, 1, 1], p=keep_prob)
-    except:
-      import pdb; pdb.set_trace()
+    # if x.shape[0] is not None:
+    # try:
+      # print("   ### Batch size is NOT None")
+      # mask = tf.keras.backend.random_bernoulli([x.shape[0], 1, 1, 1], p=keep_prob)
+    mask = tf.keras.backend.random_bernoulli([8, 1, 1, 1], p=keep_prob)
     x /= keep_prob
     x *= mask
+    # else:
+    # except:
+      # print("   $$$ Batch size IS None")
   return x
  
 
@@ -356,6 +359,8 @@ class NetworkImageNet(DataFormatHandler):
     self.drop_path_prob = DropPath().drop_path_prob # TODO handle variable self.drop_path_prob
 
   def call(self, inputs, training=False):
+    print(f"\n\n   {__name__} -1 NetworkImageNet.call()")
+    # import pdb; pdb.set_trace()
     logits_aux = None
     s0 = self.stem0(inputs)
     s1 = self.stem1(s0)
@@ -365,7 +370,10 @@ class NetworkImageNet(DataFormatHandler):
         if self._auxiliary and self.train:
           logits_aux = self.auxiliary_head(s1)
     out = self.global_pooling(s1)
+    print(f"\n\n   {__name__} 0 NetworkImageNet.call()")
     logits = self.classifier(tf.keras.layers.Flatten()(out))
+    print(f"\n\n   {__name__} 1 NetworkImageNet.call()")
+    print(logits.shape)
     return logits, logits_aux
 
 
@@ -375,4 +383,7 @@ class Pdart(GenericModel):
 
   def model(self): # TODO
     pdart = NetworkImageNet(self.layers(), self.label_dim)
+    print(f"\n\n   {__name__} 0 Pdart.model()")
     self.x, logits_aux = pdart.call(self.x)
+    # import pdb; pdb.set_trace()
+    print(f"\n\n   {__name__} 1 Pdart.model()")
