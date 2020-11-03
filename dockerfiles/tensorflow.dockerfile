@@ -1,7 +1,7 @@
 FROM tensorflow/tensorflow:2.3.0-gpu
 
 RUN apt-get update && \
-    apt-get install -y libsm6 libxrender1 libxext6 libgl1-mesa-glx vim && \
+    apt-get install -y libsm6 libxrender1 libxext6 libgl1-mesa-glx && \
     pip install \
     opencv-python \
     pyyaml \

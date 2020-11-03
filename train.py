@@ -24,13 +24,15 @@ arguments = [
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture'],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
-    [bool, "use_wandb", False, 'enable if we want to utilize weights and biases'],
-    [str, 'project', 'project0', 'Unique project name within which the training runs are executed in wandb',],
-    [str, 'run_name', '', 'Unique run name within which the training runs are executed in wandb',],
+    ['namespace', 'wandb_params', [
+      [bool, "use_wandb", False, 'enable if we want to utilize weights and biases'],
+      [str, 'project', 'project0', 'Unique project name within which the training runs are executed in wandb',],
+      [str, 'run_name', '', 'Unique run name for each experiments to be tracked under project',],
+    ]],
     ['namespace', 'conversion_params', [
-        [bool, 'output_layer_before_up2tf', False, 'Whether to use final output layer before UpStride2TF conversion or not'],
-        [str, 'tf2up_strategy', '', 'TF2UpStride conversion strategy'],
-        [str, 'up2tf_strategy', 'default', 'UpStride2TF conversion strategy']
+      [bool, 'output_layer_before_up2tf', False, 'Whether to use final output layer before UpStride2TF conversion or not'],
+      [str, 'tf2up_strategy', '', 'TF2UpStride conversion strategy'],
+      [str, 'up2tf_strategy', 'default', 'UpStride2TF conversion strategy']
     ]],
 ] + global_conf.arguments + training.arguments
 
@@ -40,6 +42,7 @@ def main():
   """
   args = argparse.parse_cmd(arguments)
   args['server'] = alchemy_api.start_training(args['server'])
+  # Use weight and biases only use_wandb is true and framework is tensorflow
   if args['use_wandb'] and "tensorflow" in args['framework']:
     import wandb
     wandb.init(name= args['run_name'], project=args['project'], config=args)
@@ -95,6 +98,7 @@ def train(args):
   callbacks.append(model_checkpoint_cb)
   if args['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(args['server']))
+  # Use weight and biases only use_wandb is true and framework is tensorflow
   if args['use_wandb'] and 'tensorflow' in args['framework']:
     from wandb.keras import WandbCallback
     callbacks.append(WandbCallback())
