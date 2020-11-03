@@ -315,75 +315,71 @@ class NetworkImageNet(DataFormatHandler):
     super().__init__()
     self.train = train
     self.label_dim = label_dim
-    genotype = eval("%s" % genotype) # TODO improve
+    self.genotype = eval("%s" % genotype) # TODO improve
     self.n_layers = n_layers
     self._auxiliary = auxiliary
 
-    self.stem0 = Sequential([
-      tf.keras.layers.ZeroPadding2D(padding=1),
-      layers.Conv2D(C // 2, kernel_size=3, strides=2, padding='VALID', kernel_initializer='he_uniform', use_bias=False),
-      layers.BatchNormalization(axis=self.axis),
-      layers.ReLU(),
-      tf.keras.layers.ZeroPadding2D(padding=1),
-      layers.Conv2D(C, kernel_size=3, strides=2, padding='VALID', kernel_initializer='he_uniform', use_bias=False),
-      layers.BatchNormalization(axis=self.axis)
-    ])
+    self.stem0 = lambda layers: Sequential([
+      # self.stem0 = Sequential([
+        tf.keras.layers.ZeroPadding2D(padding=1),
+        layers.Conv2D(C // 2, kernel_size=3, strides=2, padding='VALID', kernel_initializer='he_uniform', use_bias=False),
+        layers.BatchNormalization(axis=self.axis),
+        layers.ReLU(),
+        tf.keras.layers.ZeroPadding2D(padding=1),
+        layers.Conv2D(C, kernel_size=3, strides=2, padding='VALID', kernel_initializer='he_uniform', use_bias=False),
+        layers.BatchNormalization(axis=self.axis)
+      ])
 
-    self.stem1 = Sequential([
-      layers.ReLU(),
-      tf.keras.layers.ZeroPadding2D(padding=1),
-      layers.Conv2D(C, kernel_size=3, strides=2, padding='VALID', kernel_initializer='he_uniform', use_bias=False),
-      layers.BatchNormalization(axis=self.axis)
-    ])
-    C_prev_prev, C_prev, C_curr = C, C, C
-
-    self.cells = []
-    reduction_prev = True
-    for i in range(n_layers):
-      if i in [n_layers // 3, 2 * n_layers // 3]:
-        C_curr *= 2
-        reduction = True
-      else:
-        reduction = False
-      cell = Cell(layers, genotype, C_prev_prev, C_prev, C_curr, reduction, reduction_prev)
-      reduction_prev = reduction
-      self.cells += [cell]
-      C_prev_prev, C_prev = C_prev, cell.multiplier * C_curr
-      if i == 2 * n_layers // 3:
-        C_to_auxiliary = C_prev
+    self.stem1 = lambda layers: Sequential([
+      # self.stem1 = Sequential([
+        layers.ReLU(),
+        tf.keras.layers.ZeroPadding2D(padding=1),
+        layers.Conv2D(C, kernel_size=3, strides=2, padding='VALID', kernel_initializer='he_uniform', use_bias=False),
+        layers.BatchNormalization(axis=self.axis)
+      ])
+    self.C_prev_prev, self.C_prev, self.C_curr = C, C, C
 
     if auxiliary:
-      self.auxiliary_head = AuxiliaryHeadImageNet(layers, C_to_auxiliary, self.label_dim)
-    self.global_pooling = layers.AveragePooling2D(7)
-    self.classifier = layers.Dense(self.label_dim, kernel_initializer='he_uniform')
-    self.drop_path_prob = DropPath().drop_path_prob # TODO handle variable self.drop_path_prob
-
-  def call(self, inputs, training=False):
-    print(f"\n\n   {__name__} -1 NetworkImageNet.call()")
-    # import pdb; pdb.set_trace()
-    logits_aux = None
-    s0 = self.stem0(inputs)
-    s1 = self.stem1(s0)
-    for i, cell in enumerate(self.cells):
-      s0, s1 = s1, cell(s0, s1, self.drop_path_prob) # TODO handle variable self.drop_path_prob
-      if i == 2 * self.n_layers // 3:
-        if self._auxiliary and self.train:
-          logits_aux = self.auxiliary_head(s1)
-    out = self.global_pooling(s1)
-    print(f"\n\n   {__name__} 0 NetworkImageNet.call()")
-    logits = self.classifier(tf.keras.layers.Flatten()(out))
-    print(f"\n\n   {__name__} 1 NetworkImageNet.call()")
-    print(logits.shape)
-    return logits, logits_aux
+      self.auxiliary_head = lambda layers, C_to_auxiliary, label_dim: AuxiliaryHeadImageNet(layers, C_to_auxiliary, label_dim)
+    self.classifier = lambda layers: Sequential([
+      tf.keras.layers.Flatten(),
+      layers.Dense(self.label_dim, kernel_initializer='he_uniform')
+    ])
 
 
 class Pdart(GenericModel):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
 
-  def model(self): # TODO
-    pdart = NetworkImageNet(self.layers(), self.label_dim)
-    print(f"\n\n   {__name__} 0 Pdart.model()")
-    self.x, logits_aux = pdart.call(self.x)
-    # import pdb; pdb.set_trace()
-    print(f"\n\n   {__name__} 1 Pdart.model()")
+  def model(self):
+    net = NetworkImageNet(self.layers(), self.label_dim)
+    C_prev_prev, C_prev, C_curr = net.C_prev_prev, net.C_prev, net.C_curr
+    drop_path_prob = DropPath().drop_path_prob # TODO handle variable self.drop_path_prob
+
+    logits_aux = None
+    s0 = net.stem0(self.layers())(self.x)
+    s1 = net.stem1(self.layers())(s0)
+
+    cells = []
+    reduction_prev = True
+    for i in range(net.n_layers):
+      if i in [net.n_layers // 3, 2 * net.n_layers // 3]:
+        net.C_curr *= 2
+        reduction = True
+      else:
+        reduction = False
+      cell = Cell(self.layers(), net.genotype, C_prev_prev, C_prev, C_curr, reduction, reduction_prev)
+      reduction_prev = reduction
+      cells += [cell]
+      C_prev_prev, C_prev = C_prev, cell.multiplier * C_curr
+      if i == 2 * net.n_layers // 3:
+        C_to_auxiliary = C_prev
+
+      s0, s1 = s1, cell(s0, s1, drop_path_prob) # TODO handle variable self.drop_path_prob
+      if i == 2 * net.n_layers // 3:
+        if net._auxiliary and net.train:
+          logits_aux = net.auxiliary_head(self.layers(), C_to_auxiliary, net.label_dim)(s1)
+
+    self.x = self.layers().AveragePooling2D(7)(s1)
+    self.x = net.classifier(self._layers())(self.x)
+    # return self.x, logits_aux
