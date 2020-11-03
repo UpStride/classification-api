@@ -4,43 +4,35 @@ import numpy as np
 import tensorflow as tf
 import upstride_argparse as argparse
 from src.data import dataloader, augmentations
-from src.models.generic_model import framework_list
-from src.models import model_name_to_class
 from submodules.global_dl import global_conf
-from train import arguments as args_spec
 
-args_spec.append(
-    [int, 'zmq_port', 5555, 'Specify the port to connect the ZMQ socket', lambda x: x > 0]
-)
+args_spec = [
+    # framework specification
+    [str, 'model_dir', None, 'Path to a folder containing saved model', lambda x: os.path.exists(x)],
+
+    # dataloader specification to run inference on a dataset
+    [int, "num_classes", 0, 'Number of classes'],
+    ['namespace', 'dataloader', [
+        ['list[str]', 'list', ['Resize', 'CentralCrop', 'Normalize'], 'Comma-separated list of data augmentation operations'],
+        [str, "data_dir", '', "directory to read/write data. Defaults to  \"~/tensorflow_datasets\""],
+        [str, 'name', None, 'Choose the dataset to be used'],
+        [str, 'split_id', 'validation', 'Split id in the dataset to use'],
+        [int, 'batch_size', 1, 'The size of batch per gpu', lambda x: x > 0],
+    ] + augmentations.arguments],
+
+    # networking parameters
+    [int, 'zmq_port', 5555, 'Specify the port to connect the ZMQ socket', lambda x: x > 0],
+] + global_conf.arguments
+
 
 
 def load_model(args):
   from train import get_experiment_name
-  # restoring from a saved model
-  if args['export']['dir']:
-    path = os.path.join(args['export']['dir'], get_experiment_name(args))
-    # import upstride to enable model deserialization
-    if args['framework'].startswith('upstride'):
-      import upstride.type0.tf.keras.layers
-      import upstride.type2.tf.keras.layers
-    model = tf.keras.models.load_model(path)
-  # restoring from a checkpoint
-  elif args['checkpoint_dir']:
-    ckpt_dir = os.path.join(args['checkpoint_dir'], get_experiment_name(args))
-    model = model_name_to_class[args['model_name']](args['framework'],
-                                                    args['factor'],
-                                                    args['input_size'],
-                                                    args['num_classes'],
-                                                    args['n_layers_before_tf'], False).model
-    model.compile(loss='categorical_crossentropy', metrics=['accuracy', 'top_k_categorical_accuracy'])
-    checkpoint = tf.train.Checkpoint(model=model)
-    manager = tf.train.CheckpointManager(checkpoint, directory=ckpt_dir, max_to_keep=None)
-    restored_ckpt = manager.restore_or_initialize()
-    if restored_ckpt is None:
-      raise RuntimeError(f"Cannot restore from a checkpoint in {ckpt_dir}")
-    print(f'Restoring {manager.latest_checkpoint}')
-  else:
-    raise ValueError('No trained model location is given. Specify checkpoint_dir or export.dir.')
+  # import upstride to enable model deserialization
+  import upstride.type0.tf.keras.layers
+  import upstride.type2.tf.keras.layers
+  print("Loading model from", args['model_dir'])
+  model = tf.keras.models.load_model(args['model_dir'])
   return model
 
 
@@ -63,17 +55,21 @@ def process_incoming_image_batches(model, shape, socket):
   received_messages_count = 0
   logging_frequency = 1000
 
+  # set batch dimension to -1 for reshaping
+  if shape[0] is None:
+      shape[0] = -1
+
+  # loop forever processing incoming messages
   while True:
     if received_messages_count % logging_frequency == 0:
-      print("received_messages_count: " + str(received_messages_count))
+      print(f"Received {received_messages_count} messages")
 
     message = socket.recv()
-    img = np.frombuffer(message, dtype='float32')
-    img = img.reshape(np.concatenate(([-1], shape)))
+    img = np.frombuffer(message, dtype='float32').reshape(shape)
     res = model.predict(img)
     socket.send(res)
     
-    received_messages_count = received_messages_count + 1
+    received_messages_count += 1
 
 
 def main():
@@ -93,9 +89,11 @@ def main():
   if args['dataloader']['name'] is not None:
     evaluate_dataset(args, model)
 
+  # otherwise for images listen to a zmq socket
   else:
     socket = create_zmq_socket(args['zmq_port'])
-    process_incoming_image_batches(model, args['input_size'], socket)
+    assert len(model.inputs) == 1, "Cannot find model input to send images on"
+    process_incoming_image_batches(model, list(model.inputs[0].shape), socket)
 
 
 if __name__ == '__main__':
