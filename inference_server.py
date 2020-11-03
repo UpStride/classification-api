@@ -32,7 +32,8 @@ def load_model(args):
   import upstride.type0.tf.keras.layers
   import upstride.type2.tf.keras.layers
   print("Loading model from", args['model_dir'])
-  model = tf.keras.models.load_model(args['model_dir'])
+  model = tf.keras.models.load_model(args['model_dir'], compile=False)    # compile=True fails on nano, maybe due to TF 2.2/2.3 difference
+  model.compile(loss='categorical_crossentropy')
   return model
 
 
@@ -60,15 +61,16 @@ def process_incoming_image_batches(model, shape, socket):
       shape[0] = -1
 
   # loop forever processing incoming messages
+  print(f"Listening to network...")
   while True:
-    if received_messages_count % logging_frequency == 0:
-      print(f"Received {received_messages_count} messages")
-
+    # wait for a message
     message = socket.recv()
-    img = np.frombuffer(message, dtype='float32').reshape(shape)
+    if received_messages_count % logging_frequency == 0:
+      print(f"Processed {received_messages_count} messages")
+    # convert the message to image
+    img = np.frombuffer(message, dtype='float16').reshape(shape)
     res = model.predict(img)
     socket.send(res)
-    
     received_messages_count += 1
 
 

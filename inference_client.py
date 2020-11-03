@@ -35,7 +35,7 @@ def create_zmq_socket(port):
 
 
 def send_and_evaluate_record(record, socket):
-  img = record[0].numpy()
+  img = record[0].numpy().astype('float16')
   val = record[1].numpy()
   socket.send(img)
   reply = socket.recv()
