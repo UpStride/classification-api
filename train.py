@@ -19,11 +19,14 @@ arguments = [
     ['namespace', 'server', alchemy_api.arguments],
     ['namespace', 'optimizer', optimizers.arguments],
     ['namespace', 'export', export.arguments],
+    [str, 'load_searched_arch', '', 'model definition file containing the searched architecture', ],
+    # TODO create namespace model with the following lines
     [str, 'framework', 'tensorflow', 'Framework to use to define the model', lambda x: x in framework_list],
     [int, "factor", 1, 'division factor to scale the number of channel. factor=2 means the model will have half the number of channels compare to default implementation'],
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
-    [str, 'load_searched_arch', '', 'model definition file containing the searched architecture', ],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
+    [float, "drop_path_prob", 0.3, 'drop path probability'],
+    ['list[int]', "input_size", [224, 224, 3], 'processed shape of each image'],
 ] + global_conf.arguments + training.arguments
 
 
@@ -37,13 +40,14 @@ def main():
 
 def get_model(args):
   load_arch = args['load_searched_arch'] if args['load_searched_arch'] else None
-  model = model_name_to_class[args['model_name']](args['framework'],
+  model = model_name_to_class[args['model_name']](args['framework'], # TODO replace args[] by args['model']
                                                   args['factor'],
                                                   args['input_size'],
                                                   args['num_classes'],
                                                   args['n_layers_before_tf'],
                                                   False,
-                                                  load_searched_arch=load_arch).model
+                                                  load_searched_arch=load_arch,
+                                                  args=args).model
   model.summary()
   optimizer = get_optimizer(args['optimizer'])
   model.compile(optimizer=optimizer, loss='categorical_crossentropy',
@@ -80,6 +84,9 @@ def train(args):
   callbacks.append(model_checkpoint_cb)
   if args['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(args['server']))
+  if args['model_name'] == 'Pdart':
+    from src.models.pdart import callback_epoch
+    callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: callback_epoch(epoch, args['num_epochs'])))
   model.fit(x=train_dataset,
             validation_data=val_dataset,
             epochs=args['num_epochs'],

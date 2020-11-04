@@ -41,16 +41,11 @@ OPS = {
 def drop_path(x, drop_prob):
   if drop_prob > 0.:
     keep_prob = 1. - drop_prob
-    # if x.shape[0] is not None:
-    # try:
-      # print("   ### Batch size is NOT None")
-      # mask = tf.keras.backend.random_bernoulli([x.shape[0], 1, 1, 1], p=keep_prob)
-    mask = tf.keras.backend.random_bernoulli([8, 1, 1, 1], p=keep_prob)
+    shape = [tf.shape(x)[0], 1, 1, 1]
+    mask_dist = tf.random.uniform(shape)
+    mask = tf.math.round(mask_dist + 2 * keep_prob - 1) # This line emulates tf.keras.backend.random_bernoulli
     x /= keep_prob
     x *= mask
-    # else:
-    # except:
-      # print("   $$$ Batch size IS None")
   return x
  
 
@@ -283,11 +278,6 @@ class Cell(DataFormatHandler):
     return tf.concat([states[i] for i in self._concat], axis=self.axis)
 
 
-class DropPath(DataFormatHandler):
-  def __init__(self, drop_path_prob=0.5): # TODO improve handling of drop_path_prob and implement callback
-    self.drop_path_prob = drop_path_prob
-
-
 class AuxiliaryHeadImageNet(DataFormatHandler):
   def __init__(self, layers, C, num_classes):
     """assuming input size 14x14"""
@@ -347,20 +337,29 @@ class NetworkImageNet(DataFormatHandler):
     ])
 
 
+def callback_epoch(epoch, num_epochs):
+  scope = tf.compat.v1.get_variable_scope()
+  # scope.reuse_variables()
+  with tf.compat.v1.variable_scope(scope, reuse=tf.compat.v1.AUTO_REUSE):
+    drop_path_prob = tf.compat.v1.get_variable('drop_path_prob', [1])
+    drop_path_prob.assign(drop_path_prob * epoch / num_epochs)
+
+
 class Pdart(GenericModel):
   def __init__(self, *args, **kwargs):
+    with tf.python.keras.backend.get_graph().as_default(): # This ensures the variables indented are part of keras' graph
+      self.drop_path_prob = tf.Variable(kwargs['args']['drop_path_prob'], name='drop_path_prob')
+      # self.drop_path_prob = tf.Variable(args['drop_path_prob'], name='drop_path_prob') # TODO implement this alternative
     super().__init__(*args, **kwargs)
 
   def model(self):
     net = NetworkImageNet(self.layers(), self.label_dim)
     C_prev_prev, C_prev, C_curr = net.C_prev_prev, net.C_prev, net.C_curr
-    drop_path_prob = DropPath().drop_path_prob # TODO handle variable self.drop_path_prob
 
     logits_aux = None
     s0 = net.stem0(self.layers())(self.x)
     s1 = net.stem1(self.layers())(s0)
 
-    cells = []
     reduction_prev = True
     for i in range(net.n_layers):
       if i in [net.n_layers // 3, 2 * net.n_layers // 3]:
@@ -370,16 +369,17 @@ class Pdart(GenericModel):
         reduction = False
       cell = Cell(self.layers(), net.genotype, C_prev_prev, C_prev, C_curr, reduction, reduction_prev)
       reduction_prev = reduction
-      cells += [cell]
       C_prev_prev, C_prev = C_prev, cell.multiplier * C_curr
       if i == 2 * net.n_layers // 3:
         C_to_auxiliary = C_prev
 
-      s0, s1 = s1, cell(s0, s1, drop_path_prob) # TODO handle variable self.drop_path_prob
+      s0, s1 = s1, cell(s0, s1, self.drop_path_prob)
       if i == 2 * net.n_layers // 3:
         if net._auxiliary and net.train:
           logits_aux = net.auxiliary_head(self.layers(), C_to_auxiliary, net.label_dim)(s1)
 
     self.x = self.layers().AveragePooling2D(7)(s1)
     self.x = net.classifier(self._layers())(self.x)
-    # return self.x, logits_aux
+    # return self.x, logits_aux # TODO handle logits_aux
+
+# TODO handle self.x vs s0 vs s1
