@@ -6,7 +6,7 @@ from src.models import model_name_to_class
 from src.models.generic_model import framework_list
 from src.utils import check_folder, get_imagenet_data, model_dir
 from submodules.global_dl import global_conf
-from submodules.global_dl.training.training import create_env_directories, setup_mp, define_model_in_strategy, get_callbacks, init_custom_checkpoint_callbacks
+from submodules.global_dl.training.training import create_env_directories, setup_mp, define_model_in_strategy, get_callbacks, init_custom_checkpoint_callbacks, GradientCallback
 from submodules.global_dl.training import training
 from submodules.global_dl.training import alchemy_api
 from submodules.global_dl.training import export
@@ -50,13 +50,13 @@ def get_model(args):
                                                   args['n_layers_before_tf'],
                                                   False,
                                                   load_searched_arch=load_arch).model
+
   model.summary()
   optimizer = get_optimizer(args['optimizer'])
   model.compile(optimizer=optimizer, loss='categorical_crossentropy',
                 metrics=['accuracy', 'top_k_categorical_accuracy'])
   # output the optimizer to save it in the checkpoint
   return model, optimizer
-
 
 def get_experiment_name(args):
   experiment_dir = f"{args['model_name']}_{args['framework']}_factor{args['factor']}"
@@ -81,6 +81,11 @@ def train(args):
   model, _ = define_model_in_strategy(args, get_model)
   alchemy_api.send_model_info(model, args['server'])
   callbacks = get_callbacks(args, log_dir)
+
+  if args['debug']['log_gradients']:
+    x, y = next(iter(train_dataset.take(1)))
+    gradient_cb = GradientCallback(batch=(x, y), log_dir=log_dir, log_freq=1)
+    callbacks.append(gradient_cb)
 
   model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir)
   callbacks.append(model_checkpoint_cb)
