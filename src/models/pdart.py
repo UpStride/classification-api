@@ -43,7 +43,7 @@ def drop_path(x, drop_prob):
     keep_prob = 1. - drop_prob
     shape = [tf.shape(x)[0], 1, 1, 1]
     mask_dist = tf.random.uniform(shape)
-    mask = tf.math.round(mask_dist + 2 * keep_prob - 1) # This line emulates tf.keras.backend.random_bernoulli
+    mask = tf.math.floor(mask_dist + keep_prob) # This line emulates tf.keras.backend.random_bernoulli
     x /= keep_prob
     x *= mask
   return x
