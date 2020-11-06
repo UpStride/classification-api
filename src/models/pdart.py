@@ -4,6 +4,7 @@ import tensorflow.keras as tfk
 from tensorflow.keras import activations, Sequential
 from collections import namedtuple
 
+drop_path_prob = None
 Genotype = namedtuple('Genotype', 'normal normal_concat reduce reduce_concat')
 
 PDARTS = Genotype(normal=[('skip_connect', 0),
@@ -338,37 +339,14 @@ class NetworkImageNet(DataFormatHandler):
 
 
 def callback_epoch(epoch, num_epochs, initial_drop_path_prob):
-  scope = tf.compat.v1.get_variable_scope()
-  # scope.reuse_variables()
-  with tf.compat.v1.variable_scope(scope, reuse=tf.compat.v1.AUTO_REUSE):
-    drop_path_prob = tf.compat.v1.get_variable('drop_path_prob', [1])
-    # initial_drop_path_prob = tf.compat.v1.get_variable('initial_drop_path_prob', [1])
-    print('\n')
-    print(f'drop_path_prob: {drop_path_prob.numpy()}')
-    print(f'initial_drop_path_prob: {initial_drop_path_prob}')
-    print(f'epoch: {epoch}')
-    print(f'num_epochs: {num_epochs}')
-    drop_path_prob.assign([initial_drop_path_prob * epoch / num_epochs])
-    print(f'drop_path_prob: {drop_path_prob.numpy()}')
-    print(f'initial_drop_path_prob: {initial_drop_path_prob}')
-
-# def callback_test(epoch, num_epochs):
-#   scope = tf.compat.v1.get_variable_scope()
-  # # scope.reuse_variables()
-  # with tf.compat.v1.variable_scope(scope, reuse=tf.compat.v1.AUTO_REUSE):
-  #   drop_path_prob = tf.compat.v1.get_variable('drop_path_prob', [1])
-  # print('\n')
-  # print(f'drop_path_prob: {drop_path_prob.numpy()}')
-  # print(f'epoch: {epoch}')
-  # print(f'num_epochs: {num_epochs}')
-
+  global drop_path_prob
+  tf.keras.backend.set_value(drop_path_prob, initial_drop_path_prob * epoch / num_epochs)
 
 class Pdart(GenericModel):
   def __init__(self, *args, **kwargs):
-    print(f'{__file__} \033[96m drop_path_prob: {kwargs["args"]["drop_path_prob"]} \033[00m')
-    with tf.python.keras.backend.get_graph().as_default(): # This ensures the variables indented are part of keras' graph
-      self.drop_path_prob = tf.constant(kwargs['args']['drop_path_prob'], name='drop_path_prob')
-      # self.drop_path_prob = tf.Variable(args['drop_path_prob'], name='drop_path_prob') # TODO implement this alternative
+    global drop_path_prob
+    drop_path_prob = tf.keras.backend.variable(kwargs['args']['drop_path_prob'], name='drop_path_prob')
+    # drop_path_prob = tf.keras.backend.variable(args['drop_path_prob'], name='drop_path_prob') # TODO implement this alternative
     super().__init__(*args, **kwargs)
 
   def model(self):
@@ -392,7 +370,7 @@ class Pdart(GenericModel):
       if i == 2 * net.n_layers // 3:
         C_to_auxiliary = C_prev
 
-      s0, s1 = s1, cell(s0, s1, self.drop_path_prob)
+      s0, s1 = s1, cell(s0, s1, drop_path_prob)
       if i == 2 * net.n_layers // 3:
         if net._auxiliary and net.train:
           logits_aux = net.auxiliary_head(self.layers(), C_to_auxiliary, net.label_dim)(s1)
@@ -401,4 +379,4 @@ class Pdart(GenericModel):
     self.x = net.classifier(self._layers())(self.x)
     # return self.x, logits_aux # TODO handle logits_aux
 
-# TODO handle self.x vs s0 vs s1
+# TODO handle self.x vs s0 vs s1 so that it is compatible with generic_model()

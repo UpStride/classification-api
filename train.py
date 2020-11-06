@@ -45,7 +45,6 @@ def main():
 
 
 def get_model(args):
-  print(f'{__file__} \033[96m drop_path_prob: {args["drop_path_prob"]} \033[00m')
   load_arch = args['load_searched_arch'] if args['load_searched_arch'] else None
   model = model_name_to_class[args['model_name']](args['framework'], # TODO replace args[] by args['model']
                                                   args['conversion_params'],
@@ -93,9 +92,8 @@ def train(args):
   if args['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(args['server']))
   if args['model_name'] == 'Pdart':
-    from src.models.pdart import callback_epoch#, callback_test
+    from src.models.pdart import callback_epoch
     callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: callback_epoch(epoch, args['num_epochs'], args['drop_path_prob'])))
-    # callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_end=lambda epoch, logs: callback_test(epoch, args['num_epochs'])))
   model.fit(x=train_dataset,
             validation_data=val_dataset,
             epochs=args['num_epochs'],
