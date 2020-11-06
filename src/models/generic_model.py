@@ -59,7 +59,7 @@ class Layer:
 
 
 class GenericModel:
-  def __init__(self, framework: str, conversion_params, factor=1, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False, hp=None, load_searched_arch=None):
+  def __init__(self, framework: str, conversion_params, factor=1, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False, hp=None, load_searched_arch=None, args=None):
     """[summary]
 
     Args:
