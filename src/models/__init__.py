@@ -4,6 +4,7 @@ import tensorflow.keras.layers as tf_layers
 
 from .alexnet import AlexNet, AlexNetQ, AlexNetToy, AlexNetNCHW
 from .mobilenet import MobileNetV2, MobileNetV2NCHW, MobileNetV2Cifar10, MobileNetV2Cifar10_2, MobileNetV2Cifar10Hyper, MobileNetV2Cifar10NCHW
+from .mobilenet_v3 import MobileNetV3Large, MobileNetV3Small
 from .resnet import (ResNet18, ResNet34, ResNet50, ResNet101, ResNet152,
                      ResNet20CIFAR, ResNet32CIFAR, ResNet44CIFAR, ResNet56CIFAR, ResNetHyper,
                      ResNet18NCHW, ResNet34NCHW, ResNet50NCHW, ResNet101NCHW, ResNet152NCHW)
@@ -62,6 +63,8 @@ model_name_to_class = {
     "ResNet152NCHW": ResNet152NCHW,
     "MobileNetV2NCHW": MobileNetV2NCHW,
     "MobileNetV2Cifar10NCHW": MobileNetV2Cifar10NCHW,
+    "MobileNetV3Large": MobileNetV3Large,
+    "MobileNetV3Small": MobileNetV3Small,
     # Hyper Model
     "SimpleHyper": SimpleHyper,
     "ResNetHyper": ResNetHyper,
