@@ -43,9 +43,9 @@ def main():
   args = argparse.parse_cmd(arguments)
   args['server'] = alchemy_api.start_training(args['server'])
   # Use weight and biases only use_wandb is true and framework is tensorflow
-  if args['use_wandb'] and "tensorflow" in args['framework']:
+  if args['wandb_params']['use_wandb'] and "tensorflow" in args['framework']:
     import wandb
-    wandb.init(name= args['run_name'], project=args['project'], config=args)
+    wandb.init(name= args['wandb_params']['run_name'], project=args['wandb_params']['project'], config=args)
     args = wandb.config
   train(args)
 
@@ -99,7 +99,7 @@ def train(args):
   if args['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(args['server']))
   # Use weight and biases only use_wandb is true and framework is tensorflow
-  if args['use_wandb'] and 'tensorflow' in args['framework']:
+  if args['wandb_params']['use_wandb'] and 'tensorflow' in args['framework']:
     from wandb.keras import WandbCallback
     callbacks.append(WandbCallback())
   model.fit(x=train_dataset,
