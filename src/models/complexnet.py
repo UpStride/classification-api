@@ -4,7 +4,6 @@ from .generic_model import GenericModel
 
 class ComplexNet(GenericModel):
   def __init__(self, *args, **kwargs):
-    self.n_blocks = 10
     self.bn_args = {
         "axis": -1,
         "momentum": 0.9,
@@ -48,3 +47,15 @@ class ComplexNet(GenericModel):
       self.residual_block(channels, True)
 
     self.x = self.layers().GlobalAveragePooling2D()(self.x)
+
+
+class ShallowComplexNet(ComplexNet):
+  def __init__(self, *args, **kwargs):
+    self.n_blocks = 10
+    super().__init__(*args, **kwargs)
+
+
+class DeepComplexNet(ComplexNet):
+  def __init__(self, *args, **kwargs):
+    self.n_blocks = 2
+    super().__init__(*args, **kwargs)
