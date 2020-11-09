@@ -30,18 +30,19 @@ class ComplexNet(GenericModel):
       self.x = layers.Add()([self.x, x_init])
     else:
       x_init = layers.Conv2D(channels, 1, 2, **self.conv_args)(x_init)
-      self.x = layers.Concatenate([x_init, self.x])
+      self.x = layers.Concatenate()([x_init, self.x])
 
   def model(self):
-    self.x = self.layers().Conv2D(32, 3, **self.conv_args)(self.x)
+    n_channels = 32 // self.factor
+    self.x = self.layers().Conv2D(n_channels, 3, **self.conv_args)(self.x)
     self.x = self.layers().BatchNormalization(**self.bn_args)(self.x)
     self.x = self.layers().Activation('relu')(self.x)
 
     for i in range(self.n_blocks - 1):  # -1 because the last one is a downsample
-      self.residual_block(32)
-    self.residual_block(32, True)
+      self.residual_block(n_channels)
+    self.residual_block(n_channels, True)
 
-    for channels in [64, 128]:
+    for channels in [n_channels * 2, n_channels * 4]:
       for i in range(self.n_blocks - 2):  # -1 because the last one is a downsample and one is removed (see paper)
         self.residual_block(channels)
       self.residual_block(channels, True)
@@ -51,11 +52,11 @@ class ComplexNet(GenericModel):
 
 class ShallowComplexNet(ComplexNet):
   def __init__(self, *args, **kwargs):
-    self.n_blocks = 10
+    self.n_blocks = 2
     super().__init__(*args, **kwargs)
 
 
 class DeepComplexNet(ComplexNet):
   def __init__(self, *args, **kwargs):
-    self.n_blocks = 2
+    self.n_blocks = 10
     super().__init__(*args, **kwargs)
