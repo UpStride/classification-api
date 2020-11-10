@@ -55,15 +55,18 @@ class ComplexNet(GenericModel):
     self.x = self.layers().Activation('relu')(self.x)
 
     # First stage
-    for i in range(self.n_blocks - 1):  # -1 because the last one is a downsample
+    for i in range(self.n_blocks):  # -1 because the last one is a downsample
       self.residual_block(n_channels)
     self.residual_block(n_channels, True)
 
-    # stage 2 and 3
-    for channels in [n_channels * 2, n_channels * 4]:
-      for i in range(self.n_blocks - 2):  # -1 because the last one is a downsample and one is removed (see paper)
-        self.residual_block(channels)
-      self.residual_block(channels, True)
+    # stage 2
+    for i in range(self.n_blocks -  1):  # -1 because the last one is a downsample and one is removed (see paper)
+      self.residual_block(n_channels * 2)
+    self.residual_block(n_channels * 2, True)
+
+    # stage 3
+    for i in range(self.n_blocks -  1):  # -1 because the last one is a downsample and one is removed (see paper)
+      self.residual_block(n_channels * 4)
 
     self.x = self.layers().GlobalAveragePooling2D()(self.x)
 
