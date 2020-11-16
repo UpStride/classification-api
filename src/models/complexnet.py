@@ -92,14 +92,14 @@ class DeepComplexNet(ComplexNet):
 # Wide and shallow definition
 class WSComplexNetTF(ComplexNet):
   def __init__(self, *args, **kwargs):
-    self.n_blocks = 16
+    self.n_blocks = 14
     self.n_channels_type_0 = 18
     super().__init__(*args, **kwargs)
 
 
 class WSComplexNetUpStride(ComplexNet):
   def __init__(self, *args, **kwargs):
-    self.n_blocks = 14
+    self.n_blocks = 16
     self.n_channels_type_0 = 12 * 2  # because 12 is the number of complex filter and we use factor 2
     super().__init__(*args, **kwargs)
 
