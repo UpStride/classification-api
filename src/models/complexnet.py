@@ -35,10 +35,10 @@ class ComplexNet(GenericModel):
   def learnVectorBlock(self):
     self.x = tf.keras.layers.BatchNormalization(**self.bn_args)(self.x)
     self.x = tf.keras.layers.Activation('relu')(self.x)
-    self.x = tf.keras.layers.Convolution2D(3, 1, kernel_initializer='he_normal', **self.conv_args)(self.x)
+    self.x = tf.keras.layers.Convolution2D(3, self.lvb_kernel_size, kernel_initializer='he_normal', **self.conv_args)(self.x)
     self.x = tf.keras.layers.BatchNormalization(**self.bn_args)(self.x)
     self.x = tf.keras.layers.Activation('relu')(self.x)
-    self.x = tf.keras.layers.Convolution2D(3, 1, kernel_initializer='he_normal', **self.conv_args)(self.x)
+    self.x = tf.keras.layers.Convolution2D(3, self.lvb_kernel_size, kernel_initializer='he_normal', **self.conv_args)(self.x)
 
   def model(self):
     n_channels = self.n_channels_type_0 // self.factor
@@ -77,6 +77,7 @@ class ShallowComplexNet(ComplexNet):
     self.conv_init = None
     self.n_blocks = 2
     self.n_channels_type_0 = 32
+    self.lvb_kernel_size = 3
     super().__init__(*args, **kwargs)
 
 
@@ -84,6 +85,7 @@ class DeepComplexNet(ComplexNet):
   def __init__(self, *args, **kwargs):
     self.n_blocks = 11
     self.n_channels_type_0 = 32
+    self.lvb_kernel_size = 3
     super().__init__(*args, **kwargs)
 
 
@@ -94,6 +96,7 @@ class WSComplexNetTF(ComplexNet):
   def __init__(self, *args, **kwargs):
     self.n_blocks = 16
     self.n_channels_type_0 = 18
+    self.lvb_kernel_size = 1
     super().__init__(*args, **kwargs)
 
 
@@ -101,6 +104,7 @@ class WSComplexNetUpStride(ComplexNet):
   def __init__(self, *args, **kwargs):
     self.n_blocks = 14
     self.n_channels_type_0 = 12 * 2  # because 12 is the number of complex filter and we use factor 2
+    self.lvb_kernel_size = 1
     super().__init__(*args, **kwargs)
 
 # Deep and Narrow
@@ -110,6 +114,7 @@ class DNComplexNetTF(ComplexNet):
   def __init__(self, *args, **kwargs):
     self.n_blocks = 23
     self.n_channels_type_0 = 14
+    self.lvb_kernel_size = 1
     super().__init__(*args, **kwargs)
 
 
@@ -117,6 +122,7 @@ class DNComplexNetUpStride(ComplexNet):
   def __init__(self, *args, **kwargs):
     self.n_blocks = 23
     self.n_channels_type_0 = 10 * 2  # because 12 is the number of complex filter and we use factor 2
+    self.lvb_kernel_size = 1
     super().__init__(*args, **kwargs)
 
 
@@ -125,6 +131,7 @@ class IBComplexNetTF(ComplexNet):
   def __init__(self, *args, **kwargs):
     self.n_blocks = 18
     self.n_channels_type_0 = 16
+    self.lvb_kernel_size = 1
     super().__init__(*args, **kwargs)
 
 
@@ -132,4 +139,5 @@ class IBComplexNetUpStride(ComplexNet):
   def __init__(self, *args, **kwargs):
     self.n_blocks = 19
     self.n_channels_type_0 = 11 * 2  # because 12 is the number of complex filter and we use factor 2
+    self.lvb_kernel_size = 1
     super().__init__(*args, **kwargs)
