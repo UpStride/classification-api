@@ -94,7 +94,7 @@ class DeepComplexNet(ComplexNet):
 # Wide and shallow definition
 class WSComplexNetTF(ComplexNet):
   def __init__(self, *args, **kwargs):
-    self.n_blocks = 16
+    self.n_blocks = 14
     self.n_channels_type_0 = 18
     self.lvb_kernel_size = 1
     super().__init__(*args, **kwargs)
@@ -102,7 +102,7 @@ class WSComplexNetTF(ComplexNet):
 
 class WSComplexNetUpStride(ComplexNet):
   def __init__(self, *args, **kwargs):
-    self.n_blocks = 14
+    self.n_blocks = 16
     self.n_channels_type_0 = 12 * 2  # because 12 is the number of complex filter and we use factor 2
     self.lvb_kernel_size = 1
     super().__init__(*args, **kwargs)
