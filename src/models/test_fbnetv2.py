@@ -26,7 +26,7 @@ class TestBinaryVector(unittest.TestCase):
 class TestGetMask(unittest.TestCase):
   def test_get_mask(self):
     binary_vectors = fbnetv2.create_binary_vector(channel_sizes=[1, 2, 4], dtype=tf.float32)
-    g = [2., 3., 5.]
+    g = tf.convert_to_tensor([2., 3., 5.])
     mask = fbnetv2.get_mask(binary_vectors, g)
     self.assertEqual(mask.dtype, tf.float32)
     self.assertTrue(np.array_equal(mask, [10.,  8.,  5.,  5.]))
