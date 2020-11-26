@@ -57,7 +57,7 @@ def gumbel_softmax(logits, gumble_noise=False):
 
 
 def get_mask(binary_vectors: List[tf.Tensor], g: List[float]):
-  vectors = [g[i] * binary_vectors[i] for i in range(len(g))]
+  vectors = [g[i] * binary_vectors[i] for i in range(g.shape[0])]
   vectors = tf.stack(vectors, axis=0)
   vector = tf.reduce_sum(vectors, axis=0)
   return vector
