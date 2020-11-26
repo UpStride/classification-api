@@ -9,6 +9,7 @@ RUN apt-get update && \
     upstride_argparse \
     keras-tuner \
     pandas \
+    wandb \
     tensorflow_addons && \
     rm -rf /var/lib/apt/lists/*
 
