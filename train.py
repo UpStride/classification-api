@@ -26,8 +26,6 @@ arguments = [
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
     [float, "drop_path_prob", 0.3, 'drop path probability'],
-    ['list[int]', "input_size", [224, 224, 3], 'processed shape of each image'],
-    [str, 'load_searched_arch', '', 'model definition file containing the searched architecture'],
     ['namespace', 'wandb_params', [
       [bool, "use_wandb", False, 'enable if we want to utilize weights and biases'],
       [str, 'project', 'project0', 'Unique project name within which the training runs are executed in wandb',],
