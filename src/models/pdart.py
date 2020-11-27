@@ -39,7 +39,6 @@ OPS = {
     'conv_7x1_1x7': lambda layers, C, strides, trainable: Conv_7x1_1x7(layers, C, strides, trainable),
 }
 
-
 def drop_path(x, drop_prob):
   if drop_prob > 0.:
     keep_prob = 1. - drop_prob
@@ -62,7 +61,7 @@ class DataFormatHandler(tf.keras.layers.Layer):
     self.axis = 1 if self.is_channels_first else -1
 
 
-# Primitives fonctions of P-Darts
+# Primitives functions of P-Darts
 class Identity(DataFormatHandler):
   def __init__(self):
     super().__init__()
@@ -312,12 +311,11 @@ class NetworkImageNet(DataFormatHandler):
     super().__init__()
     self.train = train
     self.label_dim = label_dim
-    self.genotype = eval("%s" % genotype)  # TODO improve
+    self.genotype = eval("%s" % genotype) # TODO improve
     self.n_layers = n_layers
     self._auxiliary = auxiliary
 
     self.stem0 = lambda layers: Sequential([
-        # self.stem0 = Sequential([
         tf.keras.layers.ZeroPadding2D(padding=1),
         layers.Conv2D(C // 2, kernel_size=3, strides=2, padding='VALID', kernel_initializer='he_uniform', use_bias=False),
         layers.BatchNormalization(axis=self.axis),
@@ -328,7 +326,6 @@ class NetworkImageNet(DataFormatHandler):
     ])
 
     self.stem1 = lambda layers: Sequential([
-        # self.stem1 = Sequential([
         layers.ReLU(),
         tf.keras.layers.ZeroPadding2D(padding=1),
         layers.Conv2D(C, kernel_size=3, strides=2, padding='VALID', kernel_initializer='he_uniform', use_bias=False),
