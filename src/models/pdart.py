@@ -39,6 +39,7 @@ OPS = {
     'conv_7x1_1x7': lambda layers, C, strides, trainable: Conv_7x1_1x7(layers, C, strides, trainable),
 }
 
+
 def drop_path(x, drop_prob):
   if drop_prob > 0.:
     keep_prob = 1. - drop_prob
@@ -89,11 +90,9 @@ class Zero(DataFormatHandler):  # TODO
 class AvgPool(DataFormatHandler):
   def __init__(self, layers, strides):
     super().__init__()
-    self.pad = tf.keras.layers.ZeroPadding2D(padding=1)
-    self.avgpool = layers.AveragePooling2D(3, strides=strides, padding='VALID')
+    self.avgpool = layers.AveragePooling2D(3, strides=strides, padding='SAME')
 
   def call(self, x):
-    x = self.pad(x)
     x = self.avgpool(x)
     return x
 
@@ -101,11 +100,11 @@ class AvgPool(DataFormatHandler):
 class MaxPool(DataFormatHandler):
   def __init__(self, layers, strides):
     super().__init__()
-    self.pad = tf.keras.layers.ZeroPadding2D(padding=1)
-    self.maxpool = layers.MaxPool2D(3, strides=strides, padding='VALID')
+    # self.pad = tf.keras.layers.ZeroPadding2D(padding=1)
+    self.maxpool = layers.MaxPool2D(3, strides=strides, padding='SAME')
 
   def call(self, x):
-    x = self.pad(x)
+    # x = self.pad(x)
     x = self.maxpool(x)
     return x
 
@@ -233,7 +232,12 @@ class ReLUConvBN(DataFormatHandler):
 
 
 class Cell(DataFormatHandler):
-  def __init__(self, layers, genotype, C_prev_prev, C_prev, C, reduction, reduction_prev):
+  def __init__(self, layers, genotype, C, reduction, reduction_prev):
+    """
+    Implementation note: 
+    - The pytorch code has parameters C_prev_prev and C_prev. Here we don't need them as keras auto-infer
+    input shape
+    """
     super().__init__()
     if reduction_prev:
       self.preprocess0 = FactorizedReduce(layers, C)
@@ -273,24 +277,63 @@ class Cell(DataFormatHandler):
       op2 = self._ops[2*i+1]
       h1 = op1(old_h1)
       h2 = op2(old_h2)
-      if training and drop_prob > 0.:
-        if not isinstance(op1, Identity):
-          h1 = drop_path(h1, drop_prob)
-        if not isinstance(op2, Identity):
-          h2 = drop_path(h2, drop_prob)
+      # if training and drop_prob > 0.: # TODO investigate here
+      if not isinstance(op1, Identity):
+        h1 = drop_path(h1, drop_prob)
+      if not isinstance(op2, Identity):
+        h2 = drop_path(h2, drop_prob)
       s = h1 + h2
       states += [s]
 
     return tf.concat([states[i] for i in self._concat], axis=self.axis)
 
 
-class AuxiliaryHeadImageNet(DataFormatHandler):
-  def __init__(self, layers, C, num_classes):
-    """assuming input size 14x14"""
+def cell(layers, genotype, C, reduction, reduction_prev, s0, s1, drop_prob, training=False):
+  # Get info from genotype
+  if reduction:
+    op_names, indices = zip(*genotype.reduce)
+    concat = genotype.reduce_concat
+  else:
+    op_names, indices = zip(*genotype.normal)
+    concat = genotype.normal_concat
+
+  ops = []
+  for name, index in zip(op_names, indices):
+    strides = 2 if reduction and index < 2 else 1
+    op = OPS[name](layers, C, strides, True)
+    ops += [op]
+
+  s0 = FactorizedReduce(layers, C)(s0) if reduction_prev else ReLUConvBN(layers, C, 1, 1, 0)(s0)
+  s1 = ReLUConvBN(layers, C, 1, 1, 0)(s1)
+  states = [s0, s1]
+  for i in range(len(op_names) // 2):
+    old_h1 = states[indices[2*i]]
+    old_h2 = states[indices[2*i+1]]
+    op1 = ops[2*i]
+    op2 = ops[2*i+1]
+    h1 = op1(old_h1)
+    h2 = op2(old_h2)
+    # if training and drop_prob > 0.: # TODO investigate here
+    if not isinstance(op1, Identity):
+      h1 = drop_path(h1, drop_prob)
+    if not isinstance(op2, Identity):
+      h2 = drop_path(h2, drop_prob)
+    s = h1 + h2
+    states += [s]
+
+  return tf.concat([states[i] for i in concat], axis=-1) # TODO clean this
+
+
+
+
+
+class AuxiliaryHeadCIFAR(DataFormatHandler):
+  def __init__(self, layers,  num_classes):
+    """assuming input size 8x8"""
     super().__init__()
     self.features = Sequential([
         layers.ReLU(),
-        layers.AveragePooling2D(5, strides=2, padding='valid'),
+        layers.AveragePooling2D(5, strides=3, padding='valid'),
         layers.Conv2D(128, 1, kernel_initializer='he_uniform', use_bias=False),
         layers.BatchNormalization(axis=self.axis),
         layers.ReLU(),
@@ -302,8 +345,41 @@ class AuxiliaryHeadImageNet(DataFormatHandler):
 
   def call(self, x):
     x = self.features(x)
-    x = self.classifier(tf.reshape(x, [x.shape[0], -1]))
+    x = self.flatten(x)
+    x = self.classifier(x)
     return x
+
+
+class NetworkCIFAR(DataFormatHandler):
+  def __init__(self, layers, label_dim, C=48, n_layers=14, auxiliary=False, genotype="PDARTS", train=False):
+    super().__init__()
+    self.train = train
+    self.label_dim = label_dim
+    self.genotype = eval("%s" % genotype)  # TODO improve
+    self.n_layers = n_layers
+    self._auxiliary = auxiliary
+
+    self.stem0 = lambda layers: Sequential([
+        layers.Conv2D(C // 2, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False),
+        layers.BatchNormalization(axis=self.axis),
+        layers.ReLU(),
+        layers.Conv2D(C, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False),
+        layers.BatchNormalization(axis=self.axis)
+    ])
+
+    self.stem1 = lambda layers: Sequential([
+        layers.ReLU(),
+        layers.Conv2D(C, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False),
+        layers.BatchNormalization(axis=self.axis)
+    ])
+    self.C_prev_prev, self.C_prev, self.C_curr = C, C, C
+
+    if auxiliary:
+      self.auxiliary_head = lambda layers, C_to_auxiliary, label_dim: AuxiliaryHeadImageNet(layers, C_to_auxiliary, label_dim)
+    self.classifier = lambda layers: Sequential([
+        tf.keras.layers.Flatten(),
+        layers.Dense(self.label_dim, kernel_initializer='he_uniform')
+    ])
 
 
 class NetworkImageNet(DataFormatHandler):
@@ -311,7 +387,7 @@ class NetworkImageNet(DataFormatHandler):
     super().__init__()
     self.train = train
     self.label_dim = label_dim
-    self.genotype = eval("%s" % genotype) # TODO improve
+    self.genotype = eval("%s" % genotype)  # TODO improve
     self.n_layers = n_layers
     self._auxiliary = auxiliary
 
@@ -346,41 +422,123 @@ def callback_epoch(epoch, num_epochs, initial_drop_path_prob):
   tf.keras.backend.set_value(drop_path_prob, initial_drop_path_prob * epoch / num_epochs)
 
 
-class Pdart(GenericModel):
+class PdartsImageNet(GenericModel):
   def __init__(self, *args, **kwargs):
     global drop_path_prob
     drop_path_prob = tf.keras.backend.variable(kwargs['args']['drop_path_prob'], name='drop_path_prob')
     # drop_path_prob = tf.keras.backend.variable(args['drop_path_prob'], name='drop_path_prob') # TODO implement this alternative
     super().__init__(*args, **kwargs)
+    self.c = 48 # number of channels at the beginning of the network
+    self.genotype=eval("PDARTS")
+    self.n_layers = 14
+    self._auxiliary = False
 
   def model(self):
-    net = NetworkImageNet(self.layers(), self.label_dim)
-    C_prev_prev, C_prev, C_curr = net.C_prev_prev, net.C_prev, net.C_curr
+    self.x = self.layers().Identity()(self.x) # This op is needed so Upstride can insert its custom op
+    input = self.x
+    
+    # Stem 0
+    layers = self.layers()
+    x = layers.Conv2D(self.c // 2, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(input)
+    x = layers.BatchNormalization(axis=self.axis)(x)
+    x = layers.ReLU()(x)
+    x = layers.Conv2D(self.c, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(x)
+    s0 = layers.BatchNormalization(axis=self.axis)(x)
 
-    logits_aux = None
-    s0 = net.stem0(self.layers())(self.x)
-    s1 = net.stem1(self.layers())(s0)
+    # Stem 1
+    x = layers.ReLU()(s0)
+    x = layers.Conv2D(self.c, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(x)
+    s1 = layers.BatchNormalization(axis=self.axis)(x)
+
+    C_curr = self.c
+
 
     reduction_prev = True
-    for i in range(net.n_layers):
-      if i in [net.n_layers // 3, 2 * net.n_layers // 3]:
-        net.C_curr *= 2
+    for i in range(self.n_layers):
+      if i in [self.n_layers // 3, 2 * self.n_layers // 3]:
+        C_curr *= 2
         reduction = True
       else:
         reduction = False
-      cell = Cell(self.layers(), net.genotype, C_prev_prev, C_prev, C_curr, reduction, reduction_prev)
-      reduction_prev = reduction
-      C_prev_prev, C_prev = C_prev, cell.multiplier * C_curr
-      if i == 2 * net.n_layers // 3:
-        C_to_auxiliary = C_prev
-
+      cell = Cell(self.layers(), self.genotype, C_curr, reduction, reduction_prev)
       s0, s1 = s1, cell(s0, s1, drop_path_prob)
-      if i == 2 * net.n_layers // 3:
-        if net._auxiliary and net.train:
-          logits_aux = net.auxiliary_head(self.layers(), C_to_auxiliary, net.label_dim)(s1)
+
+      reduction_prev = reduction
+      if i == 2 * self.n_layers // 3 and self._auxiliary and self.train:
+        self.logits_aux = self.auxiliary_head(self.layers(), s1)
 
     self.x = self.layers().AveragePooling2D(7)(s1)
-    self.x = net.classifier(self._layers())(self.x)
+    self.x = layers.Flatten()(self.x)
     # return self.x, logits_aux # TODO handle logits_aux
 
-# TODO handle self.x vs s0 vs s1 so that it is compatible with generic_model()
+
+  def auxiliary_head(self, layers, input_tensor):
+    """assuming input size 14x14"""
+    x = layers.ReLU()(input_tensor)
+    x = layers.AveragePooling2D(5, strides=2, padding='valid')(x)
+    x = layers.Conv2D(128, 1, kernel_initializer='he_uniform', use_bias=False)(x)
+    x = layers.BatchNormalization(axis=self.axis)(x)
+    x = layers.ReLU()(x)
+    x = layers.Conv2D(768, 2, kernel_initializer='he_uniform', use_bias=False)(x)
+    x = layers.BatchNormalization(axis=self.axis)(x)
+    x = layers.ReLU()(x)
+    x = layers.Flatten()(x)
+    x = layers.Dense(self.num_classes)(x)
+    return x
+
+
+
+class PdartsCIFAR(GenericModel):
+  def __init__(self, args, **kwargs):
+    global drop_path_prob
+    # drop_path_prob = tf.keras.backend.variable(kwargs['args']['drop_path_prob'], name='drop_path_prob')
+    drop_path_prob = tf.keras.backend.variable(args['drop_path_prob'], name='drop_path_prob') # TODO implement this alternative
+    self.c = 36 # number of channels at the beginning of the network
+    self.genotype=eval("PDARTS")
+    self.n_layers = 20
+    self._auxiliary = False
+    super().__init__(args, **kwargs)
+
+  def model(self):
+    # Stem
+    self.axis = -1 # TODO correct for channel first
+
+    layers = self.layers()
+    x = layers.Conv2D(self.c * 3, kernel_size=3, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(self.x)
+    s0 = layers.BatchNormalization(axis=self.axis)(x)
+    s1 = s0
+
+    C_curr = self.c
+
+
+    reduction_prev = False
+    for i in range(self.n_layers):
+      if i in [self.n_layers // 3, 2 * self.n_layers // 3]:
+        C_curr *= 2
+        reduction = True
+      else:
+        reduction = False
+      s0, s1 = s1, cell(self.layers(), self.genotype, C_curr, reduction, reduction_prev, s0, s1, drop_path_prob)
+
+      reduction_prev = reduction
+      if i == 2 * self.n_layers // 3 and self._auxiliary and self.train:
+        self.logits_aux = self.auxiliary_head(self.layers(), s1)
+
+    self.x = self.layers().AveragePooling2D(1)(s1)
+    self.x = layers.Flatten()(self.x)
+    # return self.x, logits_aux # TODO handle logits_aux
+
+
+  def auxiliary_head(self, layers, input_tensor):
+    """assuming input size 14x14"""
+    x = layers.ReLU()(input_tensor)
+    x = layers.AveragePooling2D(5, strides=3, padding='valid')(x)
+    x = layers.Conv2D(128, 1, kernel_initializer='he_uniform', use_bias=False)(x)
+    x = layers.BatchNormalization(axis=self.axis)(x)
+    x = layers.ReLU()(x)
+    x = layers.Conv2D(768, 2, kernel_initializer='he_uniform', use_bias=False)(x)
+    x = layers.BatchNormalization(axis=self.axis)(x)
+    x = layers.ReLU()(x)
+    x = layers.Flatten()(x)
+    x = layers.Dense(self.label_dim)(x)
+    return x

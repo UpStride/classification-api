@@ -15,7 +15,7 @@ from .nasnet import NASNetLarge, NASNetMobile, NASNetCIFAR
 from .efficientnet import EfficientNetB0, EfficientNetB1, EfficientNetB2, EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6, EfficientNetB7
 from .hypermodels import SimpleHyper
 from .fbnet_mobilenet import FBNet_MobileNetV2Imagenet, FBNet_MobileNetV2CIFAR, FBNet_MobileNetV2CIFARUP
-from .pdart import Pdart
+from .pdart import PdartsCIFAR, PdartsImageNet
 
 
 # to prevent Keras to bug for too big models.
@@ -53,7 +53,8 @@ model_name_to_class = {
     "TinyDarknet": TinyDarknet,
     "VGG16": VGG16,
     # Pdart model
-    "Pdart": Pdart,
+    "PdartsCIFAR": PdartsCIFAR,
+    "PdartsImageNet": PdartsImageNet,
     # Channel first models
     "AlexNetNCHW": AlexNetNCHW,
     "ResNet18NCHW": ResNet18NCHW,
