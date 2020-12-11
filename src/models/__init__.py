@@ -16,6 +16,7 @@ from .efficientnet import EfficientNetB0, EfficientNetB1, EfficientNetB2, Effici
 from .hypermodels import SimpleHyper
 from .fbnet_mobilenet import FBNet_MobileNetV2Imagenet, FBNet_MobileNetV2CIFAR, FBNet_MobileNetV2CIFARUP
 from .pdart import PdartsCIFAR, PdartsImageNet
+from .complexnet import ShallowComplexNet, DeepComplexNet, WSComplexNetTF, WSComplexNetUpStride, DNComplexNetTF, DNComplexNetUpStride, IBComplexNetTF, IBComplexNetUpStride
 
 
 # to prevent Keras to bug for too big models.
@@ -74,4 +75,13 @@ model_name_to_class = {
     "FBNet_MobileNetV2Imagenet": FBNet_MobileNetV2Imagenet,
     "FBNet_MobileNetV2CIFAR": FBNet_MobileNetV2CIFAR,
     "FBNet_MobileNetV2CIFARUP": FBNet_MobileNetV2CIFARUP,
+    # complexnet
+    "ShallowComplexNet": ShallowComplexNet,
+    "DeepComplexNet": DeepComplexNet,
+    "WSComplexNetTF": WSComplexNetTF,
+    "WSComplexNetUpStride": WSComplexNetUpStride,
+    "DNComplexNetTF": DNComplexNetTF,
+    "DNComplexNetUpStride": DNComplexNetUpStride,
+    "IBComplexNetTF": IBComplexNetTF,
+    "IBComplexNetUpStride": IBComplexNetUpStride,
 }
