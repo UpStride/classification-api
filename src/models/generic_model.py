@@ -79,6 +79,10 @@ class GenericModel:
 
     # if the model use auxiliary logits then it will set this variable to a different value than None
     self.logits_aux = None
+    # if the model use other inputs then it will set this variable to the list of input to add
+    self.inputs = []
+    # if the model use custom keras Model then overide this
+    self.model_class = tf.keras.Model
 
     self.factor = args['factor']
     self.label_dim = args['num_classes']
@@ -90,18 +94,19 @@ class GenericModel:
       output_tensors.append(self.logits_aux)
 
     output_logits = []
-    for output_tensor in output_tensors:
+    for i, output_tensor in enumerate(output_tensors):
       x = output_tensor
       if self.output_layer_before_up2tf:
-        x = self.layers().Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=self.weight_regularizer)(x)
+        x = self.layers().Dense(self.label_dim, use_bias=True, name=f'Logits_{i}', kernel_regularizer=self.weight_regularizer)(x)
       # Upstride to TF
       if self._previous_layer != tf.keras.layers:
         x = self._previous_layer.Upstride2TF(self.up2tf_strategy)(x)
       if not self.output_layer_before_up2tf:
-        x = tf.keras.layers.Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=self.weight_regularizer)(x)
+        x = tf.keras.layers.Dense(self.label_dim, use_bias=True, name=f'Logits_{i}', kernel_regularizer=self.weight_regularizer)(x)
       x = tf.keras.layers.Activation("softmax", dtype=tf.float32)(x)  # dtype float32 is important because of mixed precision
       output_logits.append(x)
-    self.model = tf.keras.Model(inputs, output_logits)
+    self.model = self.model_class([inputs] + self.inputs, output_logits)
+    # self.model = tf.keras.Model(inputs, output_logits)
 
   def layers(self):
     """return the layer to use and automatically convert between tensorflow and upstride

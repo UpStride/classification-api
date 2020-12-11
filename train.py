@@ -97,13 +97,18 @@ def train(args):
   callbacks.append(model_checkpoint_cb)
   if args['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(args['server']))
-  if 'Pdart' in args['model']['name']:
-    from src.models.pdart import callback_epoch
-    callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: callback_epoch(epoch, args['num_epochs'], args['model']['drop_path_prob'])))
   # Use weight and biases only use_wandb is true and framework is tensorflow
   if args['wandb_params']['use_wandb'] and 'tensorflow' in args['framework']:
     from wandb.keras import WandbCallback
     callbacks.append(WandbCallback())
+
+  if 'Pdart' in args['model']['name']:
+    model.run_eagerly = True
+    # model.drop_path_prob = args['model']['drop_path_prob'] * latest_epoch / args['num_epochs']
+    # def update_drop_path_prob(epoch):
+    #   model.drop_path_prob = args['model']['drop_path_prob'] * epoch / args['num_epochs']
+    # callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: update_drop_path_prob(epoch)))
+    
   model.fit(x=train_dataset,
             validation_data=val_dataset,
             epochs=args['num_epochs'],

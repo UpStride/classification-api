@@ -42,13 +42,16 @@ class TestFBnetMobileNet(unittest.TestCase):
   
   def test_init(self):
     print(self.img[1:])
-    model = FBNet_MobileNetV2Imagenet(
-      'tensorflow',
-      conversion_params={'output_layer_before_up2tf': False, 'tf2up_strategy': '', 'up2tf_strategy': 'default'},
-      factor=1,
-      input_shape=self.img.shape[1:],
-      label_dim=10,
-      load_searched_arch=self.file_path).model
+    params= {
+      'framework': 'tensorflow',
+      'factor': 1,
+      'input_size':self.img.shape[1:],
+      'n_layers_before_tf':0,
+      'num_classes':10,
+      'conversion_params':{'output_layer_before_up2tf': False, 'tf2up_strategy': '', 'up2tf_strategy': 'default'},
+    }
+
+    model = FBNet_MobileNetV2Imagenet(params).model
     
     # model.summary()
     get_dict = {}
