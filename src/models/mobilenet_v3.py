@@ -120,7 +120,7 @@ class _MobileNetV3(GenericModel):
               self.x)
     self.x = layers.DepthwiseConv2D(
         kernel_size,
-        kernel_regularizer=KERNEL_REGULARIZER,
+        depthwise_regularizer=KERNEL_REGULARIZER,
         strides=stride,
         padding='same' if stride == 1 else 'valid',
         use_bias=False,
