@@ -1,3 +1,25 @@
+# Copyright 2020 Google Research. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+"""EfficientNet for EfficientDet implementation, originally from
+   https://github.com/google/automl/tree/master/efficientdet
+
+[1] Mingxing Tan, Quoc V. Le
+  EfficientNet: Rethinking Model Scaling for Convolutional Neural Networks.
+  ICML'19, https://arxiv.org/abs/1905.11946
+"""
+
 import collections
 import tensorflow as tf
 import tensorflow.compat.v1 as tf1
@@ -8,10 +30,10 @@ import math
 import numpy as np
 from absl import logging
 from six.moves import xrange
-
 from tensorflow.python.eager import tape as tape_lib
 
-
+# EfficientNet model instance global parameters
+# removed 'batch_norm' entry from the original code, as far as classification-api produces its own layer classes
 GlobalParams = collections.namedtuple('GlobalParams', [
     'batch_norm_momentum', 'batch_norm_epsilon', 'dropout_rate', 'data_format',
     'num_classes', 'width_coefficient', 'depth_coefficient', 'depth_divisor',
@@ -21,6 +43,8 @@ GlobalParams = collections.namedtuple('GlobalParams', [
 ])
 GlobalParams.__new__.__defaults__ = (None,) * len(GlobalParams._fields)
 
+
+# EfficientNet block instance global parameters
 BlockArgs = collections.namedtuple('BlockArgs', [
     'kernel_size', 'num_repeat', 'input_filters', 'output_filters',
     'expand_ratio', 'id_skip', 'strides', 'se_ratio', 'conv_type', 'fused_conv',
@@ -30,12 +54,18 @@ BlockArgs = collections.namedtuple('BlockArgs', [
 # https://docs.python.org/3/library/collections.html#collections.namedtuple
 BlockArgs.__new__.__defaults__ = (None,) * len(BlockArgs._fields)
 
+
+# default block arguments encoded in a list of strings (decoded by BlockDecoder)
 _DEFAULT_BLOCKS_ARGS = [
     'r1_k3_s11_e1_i32_o16_se0.25', 'r2_k3_s22_e6_i16_o24_se0.25',
     'r2_k5_s22_e6_i24_o40_se0.25', 'r3_k3_s22_e6_i40_o80_se0.25',
     'r3_k5_s11_e6_i80_o112_se0.25', 'r4_k5_s22_e6_i112_o192_se0.25',
     'r1_k3_s11_e6_i192_o320_se0.25',
 ]
+
+##
+# Utility functions
+##
 
 def round_filters(filters, global_params, skip=False):
   """Round number of filters based on depth multiplier."""
@@ -85,6 +115,7 @@ def conv_kernel_initializer(shape, dtype=None, partition_info=None):
   return tf.random.normal(
       shape, mean=0.0, stddev=np.sqrt(2.0 / fan_out), dtype=dtype)
 
+
 def dense_kernel_initializer(shape, dtype=None, partition_info=None):
   """Initialization for dense kernels.
 
@@ -106,11 +137,6 @@ def dense_kernel_initializer(shape, dtype=None, partition_info=None):
   return tf.random.uniform(shape, -init_range, init_range, dtype=dtype)
 
 
-######
-##
-## UTILS
-##
-######
 def _recompute_grad(f):
   """An eager-compatible version of recompute_grad.
 
@@ -210,6 +236,9 @@ def drop_connect(inputs, is_training, survival_prob):
   output = inputs / survival_prob * binary_tensor
   return output
 
+##
+# EfficientNet blocks implementations
+##
 
 class Stem(tf.keras.layers.Layer):
   """Stem layer at the begining of the network."""
@@ -741,9 +770,13 @@ class BlockDecoder(object):
 
 
 class EfficientNet(GenericModel):
+  """EfficientNet model template implementation"""
+
   def __init__(self, blocks_args=None, global_params=None, *args, **kwargs):
     _, conversion_params, factor, _, num_classes, _, _ = args
     assert conversion_params["output_layer_before_up2tf"] == True, "COUCOU"
+    assert global_params.survival_prob is None, "Stochastic depth is not implemented"
+      # The original implementation overrides call() method of tf.keras.Model. Cannot do so in classification-api.
 
     if not isinstance(blocks_args, list):
       raise ValueError('blocks_args should be a list.')
@@ -762,12 +795,6 @@ class EfficientNet(GenericModel):
 
   def model(self):
     """Builds a model."""
-    self._batch_norm = self.layers().BatchNormalization
-
-    if self._global_params.data_format == 'channels_first':
-      self.x = tf.transpose(self.x, [0, 3, 1, 2])
-      tf.keras.backend.set_image_data_format('channels_first')
-
     self._blocks = []
 
     # Stem part.
@@ -836,8 +863,13 @@ class EfficientNet(GenericModel):
 
     # Head part.
     self._head = Head(framework=self.layers(), factor=self.factor, num_classes=self.num_classes, global_params=self._global_params)
-    
-    # NEW STUFF
+
+    # connect blocks
+    # Equivalent to the original EfficientNet template implementation without stochastic depth
+    if self._global_params.data_format == 'channels_first':
+      self.x = tf.transpose(self.x, [0, 3, 1, 2])
+      tf.keras.backend.set_image_data_format('channels_first')
+
     self.x = self._stem(self.x)
     for block in self._blocks:
       self.x = block(self.x)
@@ -849,15 +881,16 @@ class EfficientNetB0NCHW(EfficientNet):
     framework, conversion_params, factor, input_size, num_classes, _, _ = args
     assert tuple(input_size) == (224, 224, 3)
 
+    # setting up default global parameters
     global_params = GlobalParams(blocks_args=_DEFAULT_BLOCKS_ARGS,
                                  batch_norm_momentum=0.99,
                                  batch_norm_epsilon=1e-3,
-                                 dropout_rate=0.2, #dropout_rate,
-                                 survival_prob=None, #survival_prob,
+                                 dropout_rate=0.2,
+                                 survival_prob=None,
                                  data_format='channels_first',
-                                 num_classes=num_classes, #1000,
-                                 width_coefficient=1.0, #width_coefficient,
-                                 depth_coefficient=1.0, #depth_coefficient,
+                                 num_classes=num_classes,
+                                 width_coefficient=1.0,
+                                 depth_coefficient=1.0,
                                  depth_divisor=8,
                                  min_depth=None,
                                  relu_fn=tf.nn.swish,

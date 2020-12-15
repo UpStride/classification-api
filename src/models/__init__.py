@@ -12,8 +12,7 @@ from .squeezenet import SqueezeNet
 from .tiny_darknet import TinyDarknet
 from .vgg import VGG16
 from .nasnet import NASNetLarge, NASNetMobile, NASNetCIFAR
-#from .efficientnet import EfficientNetB0, EfficientNetB1, EfficientNetB2, EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6, EfficientNetB7
-from .efficientnet_NCHW import EfficientNetB0NCHW
+from .efficientnet import EfficientNetB0NCHW
 from .hypermodels import SimpleHyper
 from .fbnet_mobilenet import FBNet_MobileNetV2Imagenet, FBNet_MobileNetV2CIFAR, FBNet_MobileNetV2CIFARUP
 from .pdart import Pdart
