@@ -275,7 +275,7 @@ class Head(tf.keras.layers.Layer):
     self._global_params = global_params
 
     self._conv_head = framework.Conv2D(
-        filters=round_filters(1280 * global_params.num_classes // 1000, global_params, global_params.fix_head_stem),
+        filters=round_filters(1280, global_params, global_params.fix_head_stem),
         kernel_size=[1, 1],
         strides=[1, 1],
         kernel_initializer=conv_kernel_initializer,
@@ -953,11 +953,10 @@ class Model(tf.keras.Model):
 
 class EfficientNetB0NCHW(GenericModel):
   def __init__(self, *args, **kwargs):
-    framework, conversion_params, _, input_size, num_classes, _, _ = args
+    framework, conversion_params, _, input_size, _, _, _ = args
 
-    # assert
+    # ensure the input size
     assert tuple(input_size) == (224, 224, 3)
-    assert conversion_params["output_layer_before_up2tf"] == True, "COUCOU"
 
     # set up default global parameters
     self.global_params = GlobalParams(blocks_args=_DEFAULT_BLOCKS_ARGS,
@@ -966,7 +965,7 @@ class EfficientNetB0NCHW(GenericModel):
                                       dropout_rate=0.2,
                                       survival_prob=0.8,
                                       data_format='channels_first',
-                                      num_classes=num_classes,
+                                      num_classes=None,
                                       width_coefficient=1.0,
                                       depth_coefficient=1.0,
                                       depth_divisor=8,
