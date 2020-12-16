@@ -35,12 +35,14 @@ from tensorflow.python.eager import tape as tape_lib
 
 # EfficientNet model instance global parameters
 # removed 'batch_norm' entry from the original code, as far as classification-api produces its own layer classes
+# added weight_decay, AS IN THE PAPER BORDEL !!!
 GlobalParams = collections.namedtuple('GlobalParams', [
     'batch_norm_momentum', 'batch_norm_epsilon', 'dropout_rate', 'data_format',
     'num_classes', 'width_coefficient', 'depth_coefficient', 'depth_divisor',
     'min_depth', 'survival_prob', 'relu_fn', 'use_se',
     'local_pooling', 'condconv_num_experts', 'clip_projection_output',
-    'blocks_args', 'fix_head_stem', 'grad_checkpoint'
+    'blocks_args', 'fix_head_stem', 'grad_checkpoint',
+    'weight_decay'
 ])
 GlobalParams.__new__.__defaults__ = (None,) * len(GlobalParams._fields)
 
@@ -252,6 +254,7 @@ class Stem(tf.keras.layers.Layer):
         kernel_size=[3, 3],
         strides=[2, 2],
         kernel_initializer=conv_kernel_initializer,
+        kernel_regularizer=global_params.weight_decay,
         padding='same',
         data_format=global_params.data_format,
         use_bias=False)
@@ -279,6 +282,7 @@ class Head(tf.keras.layers.Layer):
         kernel_size=[1, 1],
         strides=[1, 1],
         kernel_initializer=conv_kernel_initializer,
+        kernel_regularizer=global_params.weight_decay,
         padding='same',
         data_format=global_params.data_format,
         use_bias=False,
@@ -294,7 +298,8 @@ class Head(tf.keras.layers.Layer):
     if global_params.num_classes:
       self._fc = framework.Dense(
           global_params.num_classes,
-          kernel_initializer=dense_kernel_initializer)
+          kernel_initializer=dense_kernel_initializer,
+          kernel_regularizer=global_params.weight_decay)
     else:
       self._fc = None
 
@@ -349,6 +354,7 @@ class SuperPixel(tf.keras.layers.Layer):
         kernel_size=[2, 2],
         strides=[2, 2],
         kernel_initializer=conv_kernel_initializer,
+        kernel_regularizer=global_params.weight_decay,
         padding='same',
         data_format=global_params.data_format,
         use_bias=False,
@@ -380,6 +386,7 @@ class SE(tf.keras.layers.Layer):
         kernel_size=[1, 1],
         strides=[1, 1],
         kernel_initializer=conv_kernel_initializer,
+        kernel_regularizer=global_params.weight_decay,
         padding='same',
         data_format=self._data_format,
         use_bias=True,
@@ -389,6 +396,7 @@ class SE(tf.keras.layers.Layer):
         kernel_size=[1, 1],
         strides=[1, 1],
         kernel_initializer=conv_kernel_initializer,
+        kernel_regularizer=global_params.weight_decay,
         padding='same',
         data_format=self._data_format,
         use_bias=True,
@@ -480,6 +488,7 @@ class MBConvBlock(tf.keras.layers.Layer):
           kernel_size=[kernel_size, kernel_size],
           strides=self._block_args.strides,
           kernel_initializer=conv_kernel_initializer,
+          kernel_regularizer=self._global_params.weight_decay,
           padding='same',
           data_format=self._data_format,
           use_bias=False,
@@ -493,6 +502,7 @@ class MBConvBlock(tf.keras.layers.Layer):
             kernel_size=[1, 1],
             strides=[1, 1],
             kernel_initializer=conv_kernel_initializer,
+            kernel_regularizer=self._global_params.weight_decay,
             padding='same',
             data_format=self._data_format,
             use_bias=False,
@@ -508,6 +518,7 @@ class MBConvBlock(tf.keras.layers.Layer):
           kernel_size=[kernel_size, kernel_size],
           strides=self._block_args.strides,
           depthwise_initializer=conv_kernel_initializer,
+          depthwise_regularizer=self._global_params.weight_decay,
           padding='same',
           data_format=self._data_format,
           use_bias=False,
@@ -534,6 +545,7 @@ class MBConvBlock(tf.keras.layers.Layer):
         kernel_size=[1, 1],
         strides=[1, 1],
         kernel_initializer=conv_kernel_initializer,
+        kernel_regularizer=self._global_params.weight_decay,
         padding='same',
         data_format=self._data_format,
         use_bias=False,
@@ -620,6 +632,7 @@ class MBConvBlockWithoutDepthwise(MBConvBlock):
           kernel_size=[kernel_size, kernel_size],
           strides=[1, 1],
           kernel_initializer=conv_kernel_initializer,
+          kernel_regularizer=self._global_params.weight_decay,
           padding='same',
           use_bias=False,
           name=get_conv_name())
@@ -635,6 +648,7 @@ class MBConvBlockWithoutDepthwise(MBConvBlock):
         kernel_size=[1, 1],
         strides=self._block_args.strides,
         kernel_initializer=conv_kernel_initializer,
+        kernel_regularizer=self._global_params.weight_decay,
         padding='same',
         use_bias=False,
         name=get_conv_name())
@@ -972,7 +986,8 @@ class EfficientNetB0NCHW(GenericModel):
                                       min_depth=None,
                                       relu_fn=tf.nn.swish,
                                       use_se=True,
-                                      clip_projection_output=False)
+                                      clip_projection_output=False,
+                                      weight_decay=tf.keras.regularizers.l2(1e-5))
     super().__init__(*args, **kwargs)
 
   def model(self):
