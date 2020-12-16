@@ -28,6 +28,7 @@ import re
 import itertools
 import math
 import numpy as np
+import six
 from absl import logging
 from six.moves import xrange
 from tensorflow.python.eager import tape as tape_lib
@@ -267,14 +268,14 @@ class Stem(tf.keras.layers.Layer):
 class Head(tf.keras.layers.Layer):
   """Head layer for network outputs."""
 
-  def __init__(self, framework, factor, num_classes, global_params, name=None):
+  def __init__(self, framework, factor, global_params, name=None):
     super().__init__(name=name)
 
     self.endpoints = {}
     self._global_params = global_params
 
     self._conv_head = framework.Conv2D(
-        filters=round_filters(1280 * num_classes // 1000, global_params, global_params.fix_head_stem),
+        filters=round_filters(1280 * global_params.num_classes // 1000, global_params, global_params.fix_head_stem),
         kernel_size=[1, 1],
         strides=[1, 1],
         kernel_initializer=conv_kernel_initializer,
@@ -769,14 +770,28 @@ class BlockDecoder(object):
     return block_strings
 
 
-class EfficientNet(GenericModel):
-  """EfficientNet model template implementation"""
+class Model(tf.keras.Model):
+  """A class implements tf.keras.Model.
 
-  def __init__(self, blocks_args=None, global_params=None, *args, **kwargs):
-    _, conversion_params, factor, _, num_classes, _, _ = args
-    assert conversion_params["output_layer_before_up2tf"] == True, "COUCOU"
-    assert global_params.survival_prob is None, "Stochastic depth is not implemented"
-      # The original implementation overrides call() method of tf.keras.Model. Cannot do so in classification-api.
+    Reference: https://arxiv.org/abs/1807.11626
+  """
+
+  def __init__(self, framework, factor, blocks_args=None, global_params=None, name=None):
+    """Initializes an `Model` instance.
+
+    Args:
+      framework: A set of layer classes to use.
+      factor: A channels scaling factor.
+      blocks_args: A list of BlockArgs to construct block modules.
+      global_params: GlobalParams, a set of global parameters.
+      name: A string of layer name.
+
+    Raises:
+      ValueError: when blocks_args is not specified as a list.
+    """
+    super().__init__(name=name)
+    self.framework = framework
+    self.factor = factor
 
     if not isinstance(blocks_args, list):
       raise ValueError('blocks_args should be a list.')
@@ -784,21 +799,21 @@ class EfficientNet(GenericModel):
     self._blocks_args = blocks_args
     self._relu_fn = global_params.relu_fn or tf.nn.swish
     self._fix_head_stem = global_params.fix_head_stem
-    self.num_classes = num_classes
-    self.factor = factor
+
     self.endpoints = None
-    super().__init__(*args, **kwargs)
+
+    self._build()
 
   def _get_conv_block(self, conv_type):
     conv_block_map = {0: MBConvBlock, 1: MBConvBlockWithoutDepthwise}
     return conv_block_map[conv_type]
 
-  def model(self):
+  def _build(self):
     """Builds a model."""
     self._blocks = []
 
     # Stem part.
-    self._stem = Stem(framework=self.layers(), factor=self.factor, global_params=self._global_params, stem_filters=self._blocks_args[0].input_filters)
+    self._stem = Stem(self.framework, self.factor, self._global_params, self._blocks_args[0].input_filters)
 
     # Builds blocks.
     block_id = itertools.count(0)
@@ -826,7 +841,7 @@ class EfficientNet(GenericModel):
       conv_block = self._get_conv_block(block_args.conv_type)
       if not block_args.super_pixel:  #  no super_pixel at all
         self._blocks.append(
-            conv_block(framework=self.layers(), factor=self.factor, block_args=block_args, global_params=self._global_params, name=block_name()))
+            conv_block(self.framework, self.factor, block_args, self._global_params, name=block_name()))
       else:
         # if superpixel, adjust filters, kernels, and strides.
         depth_factor = int(4 / block_args.strides[0] / block_args.strides[1])
@@ -839,7 +854,7 @@ class EfficientNet(GenericModel):
         if (block_args.strides[0] == 2 and block_args.strides[1] == 2):
           block_args = block_args._replace(strides=[1, 1])
           self._blocks.append(
-              conv_block(framework=self.layers(), factor=self.factor, block_args=block_args, global_params=self._global_params, name=block_name()))
+              conv_block(self.framework, self.factor, block_args, self._global_params, name=block_name()))
           block_args = block_args._replace(  # sp stops at stride-2
               super_pixel=0,
               input_filters=input_filters,
@@ -847,11 +862,11 @@ class EfficientNet(GenericModel):
               kernel_size=kernel_size)
         elif block_args.super_pixel == 1:
           self._blocks.append(
-              conv_block(framework=self.layers(), factor=self.factor, block_args=block_args, global_params=self._global_params, name=block_name()))
+              conv_block(self.framework, self.factor, block_args, self._global_params, name=block_name()))
           block_args = block_args._replace(super_pixel=2)
         else:
           self._blocks.append(
-              conv_block(framework=self.layers(), factor=self.factor, block_args=block_args, global_params=self._global_params, name=block_name()))
+              conv_block(self.framework, self.factor, block_args, self._global_params, name=block_name()))
       if block_args.num_repeat > 1:  # rest of blocks with the same block_arg
         # pylint: disable=protected-access
         block_args = block_args._replace(
@@ -859,46 +874,116 @@ class EfficientNet(GenericModel):
         # pylint: enable=protected-access
       for _ in xrange(block_args.num_repeat - 1):
         self._blocks.append(
-            conv_block(framework=self.layers(), factor=self.factor, block_args=block_args, global_params=self._global_params, name=block_name()))
+            conv_block(self.framework, self.factor, block_args, self._global_params, name=block_name()))
 
     # Head part.
-    self._head = Head(framework=self.layers(), factor=self.factor, num_classes=self.num_classes, global_params=self._global_params)
+    self._head = Head(self.framework, self.factor, self._global_params)
 
-    # connect blocks
-    # Equivalent to the original EfficientNet template implementation without stochastic depth
-    if self._global_params.data_format == 'channels_first':
+  def call(self,
+           inputs,
+           training,
+           features_only=None,
+           pooled_features_only=False):
+    """Implementation of call().
+
+    Args:
+      inputs: input tensors.
+      training: boolean, whether the model is constructed for training.
+      features_only: build the base feature network only.
+      pooled_features_only: build the base network for features extraction
+        (after 1x1 conv layer and global pooling, but before dropout and fc
+        head).
+
+    Returns:
+      output tensors.
+    """
+    outputs = None
+    self.endpoints = {}
+    reduction_idx = 0
+
+    # Calls Stem layers
+    outputs = self._stem(inputs, training)
+    logging.info('Built stem %s : %s', self._stem.name, outputs.shape)
+    self.endpoints['stem'] = outputs
+
+    # Calls blocks.
+    for idx, block in enumerate(self._blocks):
+      is_reduction = False  # reduction flag for blocks after the stem layer
+      # If the first block has super-pixel (space-to-depth) layer, then stem is
+      # the first reduction point.
+      if (block.block_args.super_pixel == 1 and idx == 0):
+        reduction_idx += 1
+        self.endpoints['reduction_%s' % reduction_idx] = outputs
+
+      elif ((idx == len(self._blocks) - 1) or
+            self._blocks[idx + 1].block_args.strides[0] > 1):
+        is_reduction = True
+        reduction_idx += 1
+
+      survival_prob = self._global_params.survival_prob
+      if survival_prob:
+        drop_rate = 1.0 - survival_prob
+        survival_prob = 1.0 - drop_rate * float(idx) / len(self._blocks)
+        logging.info('block_%s survival_prob: %s', idx, survival_prob)
+      outputs = block(outputs, training=training, survival_prob=survival_prob)
+      self.endpoints['block_%s' % idx] = outputs
+      if is_reduction:
+        self.endpoints['reduction_%s' % reduction_idx] = outputs
+      if block.endpoints:
+        for k, v in six.iteritems(block.endpoints):
+          self.endpoints['block_%s/%s' % (idx, k)] = v
+          if is_reduction:
+            self.endpoints['reduction_%s/%s' % (reduction_idx, k)] = v
+    self.endpoints['features'] = outputs
+
+    if not features_only:
+      # Calls final layers and returns logits.
+      outputs = self._head(outputs, training, pooled_features_only)
+      self.endpoints.update(self._head.endpoints)
+
+    return [outputs] + list(
+        filter(lambda endpoint: endpoint is not None, [
+            self.endpoints.get('reduction_1'),
+            self.endpoints.get('reduction_2'),
+            self.endpoints.get('reduction_3'),
+            self.endpoints.get('reduction_4'),
+            self.endpoints.get('reduction_5'),
+        ]))
+
+
+class EfficientNetB0NCHW(GenericModel):
+  def __init__(self, *args, **kwargs):
+    framework, conversion_params, _, input_size, num_classes, _, _ = args
+
+    # assert
+    assert tuple(input_size) == (224, 224, 3)
+    assert conversion_params["output_layer_before_up2tf"] == True, "COUCOU"
+
+    # set up default global parameters
+    self.global_params = GlobalParams(blocks_args=_DEFAULT_BLOCKS_ARGS,
+                                      batch_norm_momentum=0.99,
+                                      batch_norm_epsilon=1e-3,
+                                      dropout_rate=0.2,
+                                      survival_prob=0.8,
+                                      data_format='channels_first',
+                                      num_classes=num_classes,
+                                      width_coefficient=1.0,
+                                      depth_coefficient=1.0,
+                                      depth_divisor=8,
+                                      min_depth=None,
+                                      relu_fn=tf.nn.swish,
+                                      use_se=True,
+                                      clip_projection_output=False)
+    super().__init__(*args, **kwargs)
+
+  def model(self):
+    # transpose channel_last to channel_first
+    if self.global_params.data_format == 'channels_first':
       self.x = tf.transpose(self.x, [0, 3, 1, 2])
       tf.keras.backend.set_image_data_format('channels_first')
 
-    self.x = self._stem(self.x)
-    for block in self._blocks:
-      self.x = block(self.x)
-    self.x = self._head(self.x)
+    # create an instance of EfficientNet
+    block_args = BlockDecoder().decode(self.global_params.blocks_args)
+    model_instance = Model(self.layers(), self.factor, block_args, self.global_params)
 
-
-class EfficientNetB0NCHW(EfficientNet):
-  def __init__(self, *args, **kwargs):
-    framework, conversion_params, factor, input_size, num_classes, _, _ = args
-    assert tuple(input_size) == (224, 224, 3)
-
-    # setting up default global parameters
-    global_params = GlobalParams(blocks_args=_DEFAULT_BLOCKS_ARGS,
-                                 batch_norm_momentum=0.99,
-                                 batch_norm_epsilon=1e-3,
-                                 dropout_rate=0.2,
-                                 survival_prob=None,
-                                 data_format='channels_first',
-                                 num_classes=num_classes,
-                                 width_coefficient=1.0,
-                                 depth_coefficient=1.0,
-                                 depth_divisor=8,
-                                 min_depth=None,
-                                 relu_fn=tf.nn.swish,
-                                 use_se=True,
-                                 clip_projection_output=False)
-    decoder = BlockDecoder()
-
-    super().__init__(decoder.decode(global_params.blocks_args),
-                     global_params,
-                     *args,
-                     **kwargs)
+    self.x = model_instance(self.x)[0]
