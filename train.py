@@ -24,9 +24,6 @@ arguments = [
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture', ],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
-    [bool, "use_wandb", False, 'enable if we want to utilize weights and biases'],
-    [str, 'project', 'project0', 'Unique project name within which the training runs are executed in wandb',],
-    [str, 'run_name', '', 'Unique run name within which the training runs are executed in wandb',],
 ] + global_conf.arguments + training.arguments
 
 
@@ -35,10 +32,6 @@ def main():
   """
   args = argparse.parse_cmd(arguments)
   args['server'] = alchemy_api.start_training(args['server'])
-  if args['use_wandb'] and "tensorflow" in args['framework']:
-    import wandb
-    wandb.init(name= args['run_name'], project=args['project'], config=args)
-    args = wandb.config
   train(args)
 
 
@@ -79,8 +72,6 @@ def train(args):
                                          num_classes=args["num_classes"], split=args['dataloader']['train_split_id'])
   val_dataset = dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['val_list'],
                                        num_classes=args["num_classes"], split=args['dataloader']['val_split_id'])
-  test_dataset = dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['val_list'],
-                                       num_classes=args["num_classes"], split='test')
 
   setup_mp(args)
   model, _ = define_model_in_strategy(args, get_model)
@@ -91,9 +82,6 @@ def train(args):
   callbacks.append(model_checkpoint_cb)
   if args['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(args['server']))
-  if args['use_wandb'] and 'tensorflow' in args['framework']:
-    from wandb.keras import WandbCallback
-    callbacks.append(WandbCallback())
   model.fit(x=train_dataset,
             validation_data=val_dataset,
             epochs=args['num_epochs'],
@@ -104,8 +92,6 @@ def train(args):
   print("export model")
   export.export(model, export_dir, args)
   print("Training Completed!!")
-  model.evaluate(test_dataset, batch_size=args['dataloader']['batch_size'])
-  print("Evaluation Completed!!")
 
 
 if __name__ == '__main__':

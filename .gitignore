@@ -12,4 +12,3 @@ inference_config
 .stfolder
 .ipynb_checkpoints
 configs
-wandb
