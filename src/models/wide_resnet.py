@@ -4,7 +4,6 @@ from .generic_model import GenericModel
 
 
 weight_init = tf.keras.initializers.VarianceScaling()
-weight_regularizer = tf.keras.regularizers.l2(l=0.0001)
 
 is_channel_fist = False
 
@@ -19,6 +18,7 @@ class WideResNet(GenericModel):
       tf.keras.backend.set_image_data_format('channels_first')
 
     layers = self.layers()
+    weight_regularizer = self.weight_regularizer
     num_blocks_per_resnet = self.blocks_per_group
     filters = [int(16/self.factor), 
                int(16*self.channel_multiplier/self.factor), 
@@ -56,6 +56,7 @@ class WideResNet(GenericModel):
 
   def resblock(self, in_filter, out_filter, stride=1, use_bias=False, activate_before_residual=False, block_name='resblock'):
     layers = self.layers()
+    weight_regularizer = self.weight_regularizer
     if activate_before_residual:
       self.x = layers.BatchNormalization(name=block_name + '/batch_norm_0')(self.x)
       self.x = layers.Activation('relu', name=block_name + '/relu_0')(self.x)

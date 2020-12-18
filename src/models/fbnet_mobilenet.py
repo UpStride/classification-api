@@ -8,7 +8,6 @@ from .mobilenet import correct_pad
 is_channel_fist = False
 
 BATCHNORM_MOMENTUM = 0.9
-weight_regularizer = tf.keras.regularizers.l2(l=0.0001)
 arch_param_regularizer = tf.keras.regularizers.l2(l=0.0005)
 
 class _FBNet_MobileNetV2(GenericModel):
@@ -20,7 +19,6 @@ class _FBNet_MobileNetV2(GenericModel):
     """
     self.last_block_output_shape = 3
     self.load_searched_arch = load_searched_arch
-    self.weight_regularizer = weight_regularizer
     
     if self.load_searched_arch:
       if tf.io.gfile.exists(self.load_searched_arch):
@@ -46,6 +44,7 @@ class _FBNet_MobileNetV2(GenericModel):
         name (str): Indicates the block number and controls expansion or just depthwise separable convolution
     """
     layers = self.layers()  # we don't want to switch between tf and upstride in this block
+    weight_regularizer = self.weight_regularizer
     in_channels = self.last_block_output_shape
     # If model definition file is not passed
     if not self.load_searched_arch:
@@ -103,6 +102,8 @@ class _FBNet_MobileNetV2(GenericModel):
     if is_channel_fist:
       self.x = tf.transpose(self.x, [0, 3, 1, 2])
       tf.keras.backend.set_image_data_format('channels_first')
+
+    weight_regularizer = self.weight_regularizer
 
     # first_block_filters = _make_divisible(16, 8)
     self.x = self.layers().ZeroPadding2D(padding=correct_pad(self.x, 3), name='conv1_pad')(self.x)

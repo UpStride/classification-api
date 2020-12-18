@@ -4,7 +4,6 @@ from .generic_model import GenericModel
 is_channel_fist = False
 
 BATCHNORM_MOMENTUM = 0.9
-weight_regularizer = tf.keras.regularizers.l2(l=0.0001)
 
 # This function is taken from the original tf repo.
 # It ensures that all layers have a channel number that is divisible by 8
@@ -44,7 +43,7 @@ class _MobileNetV2(GenericModel):
   def __init__(self, *args, **kwargs):
     self.last_block_output_shape = 3
     self.bn_axis = 1 if is_channel_fist else -1
-    self.weight_regularizer = weight_regularizer
+    weight_regularizer = self.weight_regularizer
     super().__init__(*args, **kwargs)
 
   def _inverted_res_block(self, expansion, stride, alpha, filters, block_id):
@@ -98,6 +97,8 @@ class _MobileNetV2(GenericModel):
     if is_channel_fist:
       self.x = tf.transpose(self.x, [0, 3, 1, 2])
       tf.keras.backend.set_image_data_format('channels_first')
+
+    weight_regularizer = self.weight_regularizer
 
     first_block_filters = _make_divisible(32 * alpha // self.factor, 8)
     self.x = self.layers().ZeroPadding2D(padding=correct_pad(self.x, 3), name='Conv1_pad')(self.x)

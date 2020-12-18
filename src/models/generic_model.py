@@ -49,7 +49,7 @@ class Layer:
 
 
 class GenericModel:
-  def __init__(self, args, load_searched_arch=None):
+  def __init__(self, args, weight_decay=None, load_searched_arch=None):
     """[summary]
 
     Args:
@@ -75,7 +75,7 @@ class GenericModel:
     self.output_layer_before_up2tf = conversion_params['output_layer_before_up2tf']
     self.tf2up_strategy = conversion_params['tf2up_strategy']
     self.up2tf_strategy = conversion_params['up2tf_strategy']
-    self.weight_regularizer = None
+    self.weight_regularizer = tf.keras.regularizers.l2(l=weight_decay)
 
     # if the model use auxiliary logits then it will set this variable to a different value than None
     self.logits_aux = None
