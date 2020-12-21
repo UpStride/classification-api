@@ -61,8 +61,6 @@ def get_experiment_name(args):
   return experiment_dir
 
 
-
-
 def train(args):
   print(args)
   global_conf.config_tf2(args)
