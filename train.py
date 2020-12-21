@@ -26,11 +26,6 @@ arguments = [
     [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
     [str, "model_name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
     [float, "drop_path_prob", 0.3, 'drop path probability'],
-    ['namespace', 'wandb_params', [
-      [bool, "use_wandb", False, 'enable if we want to utilize weights and biases'],
-      [str, 'project', 'project0', 'Unique project name within which the training runs are executed in wandb',],
-      [str, 'run_name', '', 'Unique run name for each experiments to be tracked under project',],
-    ]],
     ['namespace', 'conversion_params', [
       [bool, 'output_layer_before_up2tf', False, 'Whether to use final output layer before UpStride2TF conversion or not'],
       [str, 'tf2up_strategy', '', 'TF2UpStride conversion strategy'],
@@ -44,11 +39,6 @@ def main():
   """
   args = argparse.parse_cmd(arguments)
   args['server'] = alchemy_api.start_training(args['server'])
-  # Use weight and biases only use_wandb is true and framework is tensorflow
-  if args['wandb_params']['use_wandb'] and "tensorflow" in args['framework']:
-    import wandb
-    wandb.init(name= args['wandb_params']['run_name'], project=args['wandb_params']['project'], config=args)
-    args = wandb.config
   train(args)
 
 
@@ -104,10 +94,6 @@ def train(args):
   if args['model_name'] == 'Pdart':
     from src.models.pdart import callback_epoch
     callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: callback_epoch(epoch, args['num_epochs'], args['drop_path_prob'])))
-  # Use weight and biases only use_wandb is true and framework is tensorflow
-  if args['wandb_params']['use_wandb'] and 'tensorflow' in args['framework']:
-    from wandb.keras import WandbCallback
-    callbacks.append(WandbCallback())
   model.fit(x=train_dataset,
             validation_data=val_dataset,
             epochs=args['num_epochs'],
