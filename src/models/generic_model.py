@@ -59,10 +59,11 @@ class Layer:
 
 
 class GenericModel:
-  def __init__(self, framework: str, factor=1, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False, hp=None, load_searched_arch=None):
+  def __init__(self, framework: str, conversion_params, factor=1, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False, hp=None, load_searched_arch=None, args=None):
     """[summary]
 
     Args:
+        conversion_params (dict): containing the params for TF2UpStride & UpStride2TF conversion
         framework (str): [description]
         factor (int, optional): [description]. Defaults to 1.
         input_shape (tuple, optional): [description]. Defaults to (224, 224, 3).
@@ -77,6 +78,10 @@ class GenericModel:
     self._previous_layer = tf.keras.layers
     inputs = tf.keras.layers.Input(shape=input_shape)
     self.x = inputs
+    self.output_layer_before_up2tf = conversion_params['output_layer_before_up2tf']
+    self.tf2up_strategy = conversion_params['tf2up_strategy']
+    self.up2tf_strategy = conversion_params['up2tf_strategy']
+    self.weight_regularizer = None
 
     self.factor = factor
     self.label_dim = label_dim
@@ -86,9 +91,15 @@ class GenericModel:
     else:
       self.model()
 
+    if self.output_layer_before_up2tf:
+      self.x = self.layers().Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=self.weight_regularizer)(self.x)
+
     # Upstride to TF
     if self._previous_layer != tf.keras.layers:
-      self.x = self._previous_layer.Upstride2TF()(self.x)
+      self.x = self._previous_layer.Upstride2TF(self.up2tf_strategy)(self.x)
+
+    if not self.output_layer_before_up2tf:
+      self.x = tf.keras.layers.Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=self.weight_regularizer)(self.x)
 
     x = tf.keras.layers.Activation("softmax", dtype=tf.float32)(self.x)  # dtype float32 is important because of mixed precision
     self.model = tf.keras.Model(inputs, x)
@@ -99,10 +110,10 @@ class GenericModel:
     l = self._layers()
     if l != self._previous_layer and self._previous_layer == tf.keras.layers:
       # then switch from tf to upstride
-      self.x = l.TF2Upstride()(self.x)
+      self.x = l.TF2Upstride(self.tf2up_strategy)(self.x)
     if l != self._previous_layer and l == tf.keras.layers:
       # then switch from upstride to tf
-      self.x = self._previous_layer.Upstride2TF()(self.x)
+      self.x = self._previous_layer.Upstride2TF(self.up2tf_strategy)(self.x)
     self._previous_layer = l
     return l
 
