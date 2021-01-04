@@ -92,14 +92,14 @@ class GenericModel:
       self.model()
 
     if self.output_layer_before_up2tf:
-      self.x = self.layers().Dense(self.label_dim, use_bias=True, name='up2tf_after_dense_Logits', kernel_regularizer=self.weight_regularizer)(self.x)
+      self.x = self.layers().Dense(self.label_dim, use_bias=True, name='logits_before_up2tf', kernel_regularizer=self.weight_regularizer)(self.x)
 
     # Upstride to TF
     if self._previous_layer != tf.keras.layers:
       self.x = self._previous_layer.Upstride2TF(self.up2tf_strategy)(self.x)
 
     if not self.output_layer_before_up2tf:
-      self.x = tf.keras.layers.Dense(self.label_dim, use_bias=True, name='up2tf_before_dense_Logits', kernel_regularizer=self.weight_regularizer)(self.x)
+      self.x = tf.keras.layers.Dense(self.label_dim, use_bias=True, name='logits_after_up2tf', kernel_regularizer=self.weight_regularizer)(self.x)
 
     x = tf.keras.layers.Activation("softmax", dtype=tf.float32)(self.x)  # dtype float32 is important because of mixed precision
     self.model = tf.keras.Model(inputs, x)
