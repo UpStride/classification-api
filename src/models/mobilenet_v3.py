@@ -240,11 +240,7 @@ class _MobileNetV3(GenericModel):
     self.x = self.layers().Activation(hard_swish, name='Conv_2/Hard_Swish')(self.x)
 
     self.x = self.layers().Flatten()(self.x)
-    self.x = self.layers().Dense(
-        self.label_dim, 
-        use_bias=True,
-        kernel_regularizer=KERNEL_REGULARIZER,
-        name='Logits')(self.x)
+
 
   
 class MobileNetV3Small(_MobileNetV3):
