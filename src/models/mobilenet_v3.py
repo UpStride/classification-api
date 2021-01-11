@@ -120,7 +120,7 @@ class _MobileNetV3(GenericModel):
               self.x)
     self.x = layers.DepthwiseConv2D(
         kernel_size,
-        kernel_regularizer=KERNEL_REGULARIZER,
+        depthwise_regularizer=KERNEL_REGULARIZER,
         strides=stride,
         padding='same' if stride == 1 else 'valid',
         use_bias=False,
@@ -180,7 +180,7 @@ class _MobileNetV3(GenericModel):
         16 // self.factor,
         kernel_size=3,
         kernel_regularizer=KERNEL_REGULARIZER,
-        strides=(2, 2),
+        strides=self.first_conv_stride,
         padding='same',
         use_bias=False,
         name='Conv')(self.x)
@@ -240,11 +240,7 @@ class _MobileNetV3(GenericModel):
     self.x = self.layers().Activation(hard_swish, name='Conv_2/Hard_Swish')(self.x)
 
     self.x = self.layers().Flatten()(self.x)
-    self.x = self.layers().Dense(
-        self.label_dim, 
-        use_bias=True,
-        kernel_regularizer=KERNEL_REGULARIZER,
-        name='Logits')(self.x)
+
 
   
 class MobileNetV3Small(_MobileNetV3):
@@ -266,11 +262,11 @@ class MobileNetV3Small(_MobileNetV3):
   def __init__(self, *args, **kwargs):
     self.alpha = 1.0
     self.dropout_rate = 0
+    self.first_conv_stride = 2
     self.config = [
-    
     # TODO plan to replace activation with strings
-    # expansion, filters, kernel, stride, se_ratio, activation
     # paper 0.25 at the first block, using make divisble makes filters to 8 rather 16 and causing dimension issue at Multiply
+    # expansion, filters, kernel, stride, se_ratio, activation
         (1,        16,      3,      2,      None,       relu), 
         (4.5,      24,      3,      2,      None,       relu), 
         (3.66,     24,      3,      1,      None,       relu), 
@@ -286,6 +282,27 @@ class MobileNetV3Small(_MobileNetV3):
     self.last_point_ch = 1024
     super().__init__(*args, **kwargs)
 
+class MobileNetV3SmallCIFAR(_MobileNetV3):
+  def __init__(self, *args, **kwargs):
+    self.alpha = 1.0
+    self.dropout_rate = 0
+    self.first_conv_stride = 1
+    self.config = [
+    # expansion, filters, kernel, stride, se_ratio, activation
+        (1,        16,      3,      1,      None,       relu), 
+        (4.5,      24,      3,      1,      None,       relu), 
+        (3.66,     24,      3,      1,      None,       relu), 
+        (4,        40,      5,      2,      0.25,       hard_swish), 
+        (6,        40,      5,      1,      0.25,       hard_swish), 
+        (6,        40,      5,      1,      0.25,       hard_swish), 
+        (3,        48,      5,      1,      0.25,       hard_swish), 
+        (3,        48,      5,      1,      0.25,       hard_swish), 
+        (6,        96,      5,      2,      0.25,       hard_swish), 
+        (6,        96,      5,      1,      0.25,       hard_swish), 
+        (6,        96,      5,      1,      0.25,       hard_swish), 
+    ]
+    self.last_point_ch = 1024
+    super().__init__(*args, **kwargs)
 class MobileNetV3Large(_MobileNetV3):
   """MobileNetV3 large version has 15 layers of inverted blocks.
 
@@ -305,12 +322,39 @@ class MobileNetV3Large(_MobileNetV3):
   def __init__(self, *args, **kwargs):
     self.alpha = 1.0
     self.dropout_rate = 0
+    self.first_conv_stride = 2
     self.config = [
     # expansion, filters, kernel, stride, se_ratio, activation   
         (1,        16,      3,      1,      None,       relu),
         (4,        24,      3,      2,      None,       relu),
         (3,        24,      3,      1,      None,       relu),
         (3,        40,      5,      2,      0.25,       relu),
+        (3,        40,      5,      1,      0.25,       relu),
+        (3,        40,      5,      1,      0.25,       relu),
+        (6,        80,      3,      2,      None,       hard_swish),
+        (2.5,      80,      3,      1,      None,       hard_swish),
+        (2.3,      80,      3,      1,      None,       hard_swish),
+        (2.3,      80,      3,      1,      None,       hard_swish),
+        (6,        112,     3,      1,      0.25,       hard_swish),
+        (6,        112,     3,      1,      0.25,       hard_swish),
+        (6,        160,     5,      2,      0.25,       hard_swish),
+        (6,        160,     5,      1,      0.25,       hard_swish),
+        (6,        160,     5,      1,      0.25,       hard_swish),
+    ]
+    self.last_point_ch = 1280
+    super().__init__(*args, **kwargs)
+
+class MobileNetV3LargeCIFAR(_MobileNetV3):
+  def __init__(self, *args, **kwargs):
+    self.alpha = 1.0
+    self.dropout_rate = 0
+    self.first_conv_stride = 1
+    self.config = [
+    # expansion, filters, kernel, stride, se_ratio, activation   
+        (1,        16,      3,      1,      None,       relu),
+        (4,        24,      3,      1,      None,       relu),
+        (3,        24,      3,      1,      None,       relu),
+        (3,        40,      5,      1,      0.25,       relu),
         (3,        40,      5,      1,      0.25,       relu),
         (3,        40,      5,      1,      0.25,       relu),
         (6,        80,      3,      2,      None,       hard_swish),
