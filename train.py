@@ -20,7 +20,6 @@ arguments = [
     ['namespace', 'optimizer', optimizers.arguments],
     ['namespace', 'export', export.arguments],
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture', ],
-    # TODO create namespace model with the following lines
     ['namespace', 'model', [
         [str, 'framework', 'tensorflow', 'Framework to use to define the model', lambda x: x in framework_list],
         [int, "factor", 1, 'division factor to scale the number of channel. factor=2 means the model will have half the number of channels compare to default implementation'],
@@ -35,11 +34,6 @@ arguments = [
             [str, 'up2tf_strategy', 'default', 'UpStride2TF conversion strategy']
         ]],
     ]],
-    ['namespace', 'wandb_params', [
-        [bool, "use_wandb", False, 'enable if we want to utilize weights and biases'],
-        [str, 'project', 'project0', 'Unique project name within which the training runs are executed in wandb', ],
-        [str, 'run_name', '', 'Unique run name for each experiments to be tracked under project', ],
-    ]],
 
 ] + global_conf.arguments + training.arguments
 
@@ -49,11 +43,6 @@ def main():
   """
   args = argparse.parse_cmd(arguments)
   args['server'] = alchemy_api.start_training(args['server'])
-  # Use weight and biases only use_wandb is true and framework is tensorflow
-  if args['wandb_params']['use_wandb'] and "tensorflow" in args['framework']:
-    import wandb
-    wandb.init(name=args['wandb_params']['run_name'], project=args['wandb_params']['project'], config=args)
-    args = wandb.config
   train(args)
 
 
@@ -97,18 +86,11 @@ def train(args):
   callbacks.append(model_checkpoint_cb)
   if args['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(args['server']))
-  # Use weight and biases only use_wandb is true and framework is tensorflow
-  if args['wandb_params']['use_wandb'] and 'tensorflow' in args['framework']:
-    from wandb.keras import WandbCallback
-    callbacks.append(WandbCallback())
 
-  if 'Pdart' in args['model']['name']:
-    model.run_eagerly = True
-    # model.drop_path_prob = args['model']['drop_path_prob'] * latest_epoch / args['num_epochs']
-    # def update_drop_path_prob(epoch):
-    #   model.drop_path_prob = args['model']['drop_path_prob'] * epoch / args['num_epochs']
-    # callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: update_drop_path_prob(epoch)))
-    
+  if args['model_name'] == 'Pdart':
+    from src.models.pdart import callback_epoch
+    callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: callback_epoch(epoch, args['num_epochs'], args['drop_path_prob'])))
+
   model.fit(x=train_dataset,
             validation_data=val_dataset,
             epochs=args['num_epochs'],
