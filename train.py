@@ -48,10 +48,11 @@ def main():
 
 def get_model(args):
   load_arch = args['load_searched_arch'] if args['load_searched_arch'] else None
-  model = model_name_to_class[args['model']['name']](args['model'], load_searched_arch=load_arch).model
+  model = model_name_to_class[args['model']['name']](args['model'], args['optimizer']['weight_decay'],
+                                                     load_searched_arch=load_arch).model
   model.summary()
   optimizer = get_optimizer(args['optimizer'])
-  model.compile(optimizer=optimizer, loss='categorical_crossentropy', loss_weights=[1, 0.4],
+  model.compile(optimizer=optimizer, loss='categorical_crossentropy',
                 metrics=['accuracy', 'top_k_categorical_accuracy'])
   # output the optimizer to save it in the checkpoint
   return model, optimizer

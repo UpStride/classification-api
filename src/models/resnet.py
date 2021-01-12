@@ -3,7 +3,6 @@ from .generic_model import GenericModel
 
 
 weight_init = tf.keras.initializers.VarianceScaling()
-weight_regularizer = tf.keras.regularizers.l2(l=0.0001)
 
 is_channel_fist = False
 
@@ -44,6 +43,7 @@ class ResNet(GenericModel):
       residual_block = self.bottle_resblock
     residual_list = self.get_residual_layer()
     ch = 64
+    weight_regularizer = self.weight_regularizer
     self.x = self.layers().Conv2D(int(ch/self.factor), 7, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer, padding="same", name='conv')(self.x)
     self.x = self.layers().MaxPooling2D(pool_size=3, strides=2)(self.x)
     for i in range(residual_list[0]):
@@ -68,6 +68,7 @@ class ResNet(GenericModel):
 
   def resblock(self, channels, use_bias=True, downsample=False, block_name='resblock'):
     layers = self.layers()
+    weight_regularizer = self.weight_regularizer
     x_init = self.x
     self.x = layers.BatchNormalization(name=block_name + '/batch_norm_0')(self.x)
     self.x = layers.Activation('relu', name=block_name + '/relu_0')(self.x)
@@ -87,6 +88,7 @@ class ResNet(GenericModel):
 
   def bottle_resblock(self, channels, use_bias=True, downsample=False, block_name='bottle_resblock'):
     layers = self.layers()
+    weight_regularizer = self.weight_regularizer
     self.x = layers.BatchNormalization(name=block_name + '/batch_norm_1x1_front')(self.x)
     shortcut = layers.Activation('relu', name=block_name + '/relu_1x1_front')(self.x)
     self.x = layers.Conv2D(channels, 1, 1, 'same', kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
@@ -204,6 +206,7 @@ class ResNetCIFAR(GenericModel):
 
   def model(self):
     residual_list = self.get_residual_layer()
+    weight_regularizer = self.weight_regularizer
     ch = 16
     self.x = self.layers().Conv2D(int(ch/self.factor), 3, 1, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                                   padding="same", name='conv')(self.x)
@@ -227,6 +230,7 @@ class ResNetCIFAR(GenericModel):
 
   def resblock_cifar(self, channels, use_bias=True, stride=1, downsample=False, block_name='resblock'):
     layers = self.layers()
+    weight_regularizer = self.weight_regularizer
     x_init = self.x
     self.x = layers.BatchNormalization(name=block_name + '/batch_norm_0')(self.x)
     self.x = layers.Activation('relu', name=block_name + '/relu_0')(self.x)

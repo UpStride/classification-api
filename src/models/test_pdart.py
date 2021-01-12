@@ -1,13 +1,13 @@
 import unittest
 import tensorflow as tf
 import numpy as np
-from .pdart import drop_path, DropPath
+from .pdart import DropPath
 
 class TestDropPath(unittest.TestCase):
   def test(self):
     x = tf.ones(shape=(10000, 1, 1, 1))
     drop_path_prob = tf.convert_to_tensor(0.3)
-    y = drop_path(x, drop_path_prob)
+    y = DropPath()([x, drop_path_prob])
     # Mean of y shouldn't change much
     self.assertAlmostEqual(tf.reduce_sum(y).numpy()/10000, 1., 1)
 
