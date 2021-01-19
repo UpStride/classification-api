@@ -13,7 +13,7 @@ from .squeezenet import SqueezeNet
 from .tiny_darknet import TinyDarknet
 from .vgg import VGG16
 from .nasnet import NASNetLarge, NASNetMobile, NASNetCIFAR
-from .efficientnet import EfficientNetB0, EfficientNetB1, EfficientNetB2, EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6, EfficientNetB7
+from .efficientnet import EfficientNetB0NCHW
 from .hypermodels import SimpleHyper
 from .fbnet_mobilenet import FBNet_MobileNetV2Imagenet, FBNet_MobileNetV2CIFAR, FBNet_MobileNetV2CIFARUP
 from .pdart import Pdart
@@ -27,14 +27,7 @@ model_name_to_class = {
     "AlexNet": AlexNet,
     "AlexNetQ": AlexNetQ,
     "AlexNetToy": AlexNetToy,
-    "EfficientNetB0": EfficientNetB0,
-    "EfficientNetB1": EfficientNetB1,
-    "EfficientNetB2": EfficientNetB2,
-    "EfficientNetB3": EfficientNetB3,
-    "EfficientNetB4": EfficientNetB4,
-    "EfficientNetB5": EfficientNetB5,
-    "EfficientNetB6": EfficientNetB6,
-    "EfficientNetB7": EfficientNetB7,
+    "EfficientNetB0NCHW": EfficientNetB0NCHW,
     "MobileNetV2": MobileNetV2,
     "MobileNetV2Cifar10": MobileNetV2Cifar10,
     "MobileNetV2Cifar10_2": MobileNetV2Cifar10_2,
