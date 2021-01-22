@@ -4,15 +4,20 @@ from .generic_model import GenericModel
 
 class ComplexNet(GenericModel):
   def __init__(self, *args, **kwargs):
+    self.channel_axis = 1 if tf.keras.backend.image_data_format() == "channels_first" else -1
+    self.weight_regularizer = kwargs['weight_regularizer']
     self.bn_args = {
-        "axis": -1,
+        "axis": self.channel_axis,
         "momentum": 0.9,
-        "epsilon": 1e-04
+        "epsilon": 1e-04,
+        # "center": False,
+        # "scale": False
     }
     self.conv_args = {
         "padding": "same",
         "use_bias": False,
-        "kernel_regularizer": tf.keras.regularizers.l2(l=0.0001),
+        "kernel_regularizer": self.weight_regularizer,
+        "kernel_initializer": "he_ind"
     }
     super().__init__(*args, **kwargs)
 
@@ -20,17 +25,17 @@ class ComplexNet(GenericModel):
     layers = self.layers()
     x_init = self.x
     strides = (2, 2) if downsample else (1, 1)
-    self.x = layers.BatchNormalization(**self.bn_args)(self.x)
+    self.x = layers.BatchNormalizationC(**self.bn_args)(self.x)
     self.x = layers.Activation('relu')(self.x)
     self.x = layers.Conv2D(channels, 3, strides, **self.conv_args)(self.x)
-    self.x = layers.BatchNormalization(**self.bn_args)(self.x)
+    self.x = layers.BatchNormalizationC(**self.bn_args)(self.x)
     self.x = layers.Activation('relu')(self.x)
     self.x = layers.Conv2D(channels, 3, **self.conv_args)(self.x)
     if not downsample:
       self.x = layers.Add()([self.x, x_init])
     else:
       x_init = layers.Conv2D(channels, 1, 2, **self.conv_args)(x_init)
-      self.x = layers.Concatenate()([x_init, self.x])
+      self.x = layers.Concatenate(axis=self.channel_axis)([x_init, self.x])
 
   def learnVectorBlock(self):
     self.x = tf.keras.layers.BatchNormalization(**self.bn_args)(self.x)
@@ -51,7 +56,7 @@ class ComplexNet(GenericModel):
       self.conv_args['kernel_initializer'] = 'he_normal'
 
     self.x = self.layers().Conv2D(n_channels, 3, **self.conv_args)(self.x)
-    self.x = self.layers().BatchNormalization(**self.bn_args)(self.x)
+    self.x = self.layers().BatchNormalizationC(**self.bn_args)(self.x)
     self.x = self.layers().Activation('relu')(self.x)
 
     # First stage
@@ -70,6 +75,7 @@ class ComplexNet(GenericModel):
 
     self.x = self.layers().GlobalAveragePooling2D()(self.x)
 
+    # self.x = self.layers().Flatten()(self.x)
 
 # Definition from the Quaternion Paper
 class ShallowComplexNet(ComplexNet):

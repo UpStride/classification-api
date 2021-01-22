@@ -116,6 +116,8 @@ def apply_list_of_transformations(image: tf.Tensor, transformation_list: List[st
     else:
       t_config = None
     image = eval(transformation)(t_config)(image)
+  if tf.keras.backend.image_data_format() == "channels_first":
+    image = tf.transpose(image, (2, 0, 1))
   return image
 
 
