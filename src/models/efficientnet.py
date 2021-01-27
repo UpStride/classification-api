@@ -13,7 +13,7 @@ import os
 import math
 import tensorflow as tf
 from copy import deepcopy
-from .generic_model import GenericModel
+from .generic_model import GenericModelBuilder
 
 
 def correct_pad(inputs, kernel_size):
@@ -88,7 +88,7 @@ def swish(x):
   return tf.nn.swish(x)
 
 
-class EfficientNet(GenericModel):
+class EfficientNet(GenericModelBuilder):
   def __init__(self,
                width_coefficient,
                depth_coefficient,

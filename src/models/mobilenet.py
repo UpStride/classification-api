@@ -1,5 +1,5 @@
 import tensorflow as tf
-from .generic_model import GenericModel
+from .generic_model import GenericModelBuilder
 
 is_channel_fist = False
 
@@ -39,49 +39,49 @@ def correct_pad(inputs, kernel_size):
   return ((correct[0] - adjust[0], correct[0]), (correct[1] - adjust[1], correct[1]))
 
 
-class _MobileNetV2(GenericModel):
+class _MobileNetV2(GenericModelBuilder):
   def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
     self.last_block_output_shape = 3
     self.bn_axis = 1 if is_channel_fist else -1
-    weight_regularizer = self.weight_regularizer
-    super().__init__(*args, **kwargs)
 
-  def _inverted_res_block(self, expansion, stride, alpha, filters, block_id):
-    layers = self.layers()  # we don't want to switch between tf and upstride in this block
+  def _inverted_res_block(self, x, expansion, stride, alpha, filters, block_id):
+    layers = self.layers  # we don't want to switch between tf and upstride in this block
     in_channels = self.last_block_output_shape
 
     pointwise_conv_filters = int(filters * alpha)
     pointwise_filters = _make_divisible(pointwise_conv_filters, 8)
-    inputs = self.x
+    inputs = x
     prefix = 'block_{}_'.format(block_id)
 
     if block_id:
       # Expand
-      self.x = layers.Conv2D((expansion * in_channels), kernel_size=1, padding='same', use_bias=False, name=prefix + 'expand', kernel_regularizer=weight_regularizer)(self.x)
-      self.x = layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'expand_BN')(self.x)
-      self.x = layers.ReLU(6., name=prefix + 'expand_relu')(self.x)
+      x = layers.Conv2D((expansion * in_channels), kernel_size=1, padding='same', use_bias=False, name=prefix + 'expand', kernel_regularizer=self.weight_regularizer)(x)
+      x = layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'expand_BN')(x)
+      x = layers.ReLU(6., name=prefix + 'expand_relu')(x)
     else:
       prefix = 'expanded_conv_'
 
     # Depthwise
     if stride == 2:
-      self.x = layers.ZeroPadding2D(padding=correct_pad(self.x, 3), name=prefix + 'pad')(self.x)
-    self.x = layers.DepthwiseConv2D(kernel_size=3, strides=stride, activation=None, use_bias=False, padding='same' if stride == 1 else 'valid',
-                                    name=prefix + 'depthwise', kernel_regularizer=weight_regularizer)(self.x)
-    self.x = layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'depthwise_BN')(self.x)
+      x = layers.ZeroPadding2D(padding=correct_pad(x, 3), name=prefix + 'pad')(x)
+    x = layers.DepthwiseConv2D(kernel_size=3, strides=stride, activation=None, use_bias=False, padding='same' if stride == 1 else 'valid',
+                                    name=prefix + 'depthwise', kernel_regularizer=self.weight_regularizer)(x)
+    x = layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'depthwise_BN')(x)
 
-    self.x = layers.ReLU(6., name=prefix + 'depthwise_relu')(self.x)
+    x = layers.ReLU(6., name=prefix + 'depthwise_relu')(x)
 
     # Project
-    self.x = layers.Conv2D(pointwise_filters, kernel_size=1, padding='same', use_bias=False, activation=None,
-                           name=prefix + 'project', kernel_regularizer=weight_regularizer)(self.x)
-    self.x = layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'project_BN')(self.x)
+    x = layers.Conv2D(pointwise_filters, kernel_size=1, padding='same', use_bias=False, activation=None,
+                           name=prefix + 'project', kernel_regularizer=self.weight_regularizer)(x)
+    x = layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'project_BN')(x)
 
     if in_channels == pointwise_filters and stride == 1:
-      self.x = layers.Add(name=prefix + 'add')([inputs, self.x])
+      x = layers.Add(name=prefix + 'add')([inputs, x])
     self.last_block_output_shape = pointwise_filters
+    return x
 
-  def model(self, alpha=1.0):
+  def model(self, x, alpha=1.0):
     """Instantiates the MobileNetV2 architecture.
     Args:
         alpha: controls the width of the network. This is known as the
@@ -95,17 +95,17 @@ class _MobileNetV2(GenericModel):
                 are used at each layer.
     """
     if is_channel_fist:
-      self.x = tf.transpose(self.x, [0, 3, 1, 2])
+      x = tf.transpose(x, [0, 3, 1, 2])
       tf.keras.backend.set_image_data_format('channels_first')
 
     weight_regularizer = self.weight_regularizer
 
     first_block_filters = _make_divisible(32 * alpha // self.factor, 8)
-    self.x = self.layers().ZeroPadding2D(padding=correct_pad(self.x, 3), name='Conv1_pad')(self.x)
-    self.x = self.layers().Conv2D(first_block_filters, kernel_size=3, strides=self.fist_conv_stride, padding='valid',
-                                  use_bias=False, name='Conv1', kernel_regularizer=weight_regularizer)(self.x)
-    self.x = self.layers().BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name='bn_Conv1')(self.x)
-    self.x = self.layers().ReLU(6., name='Conv1_relu')(self.x)
+    x = self.layers.ZeroPadding2D(padding=correct_pad(x, 3), name='Conv1_pad')(x)
+    x = self.layers.Conv2D(first_block_filters, kernel_size=3, strides=self.fist_conv_stride, padding='valid',
+                                  use_bias=False, name='Conv1', kernel_regularizer=self.weight_regularizer)(x)
+    x = self.layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name='bn_Conv1')(x)
+    x = self.layers.ReLU(6., name='Conv1_relu')(x)
 
     self.last_block_output_shape = first_block_filters
 
@@ -113,7 +113,7 @@ class _MobileNetV2(GenericModel):
     for configuration in self.configurations:
       for i in range(configuration[1]):
         stride = configuration[2] if i == 0 else 1
-        self._inverted_res_block(filters=configuration[0]//self.factor, alpha=alpha, stride=stride, expansion=configuration[3], block_id=block_id)
+        x = self._inverted_res_block(x, filters=configuration[0]//self.factor, alpha=alpha, stride=stride, expansion=configuration[3], block_id=block_id)
         block_id += 1
 
     # no alpha applied to last conv as stated in the paper:
@@ -125,13 +125,12 @@ class _MobileNetV2(GenericModel):
       last_block_filters = 1280
     last_block_filters = last_block_filters // self.factor
 
-    self.x = self.layers().Conv2D(last_block_filters, kernel_size=1, use_bias=False, name='Conv_1', kernel_regularizer=weight_regularizer)(self.x)
-    self.x = self.layers().BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name='Conv_1_bn')(self.x)
-    self.x = self.layers().ReLU(6., name='out_relu')(self.x)
+    x = self.layers.Conv2D(last_block_filters, kernel_size=1, use_bias=False, name='Conv_1', kernel_regularizer=self.weight_regularizer)(x)
+    x = self.layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name='Conv_1_bn')(x)
+    x = self.layers.ReLU(6., name='out_relu')(x)
 
-    self.x = self.layers().GlobalAveragePooling2D()(self.x)
-
-#    self.x = self.layers().Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=weight_regularizer)(self.x)
+    x = self.layers.GlobalAveragePooling2D()(x)
+    return x
 
 
 class MobileNetV2(_MobileNetV2):
@@ -194,7 +193,7 @@ class MobileNetV2Cifar10Hyper(_MobileNetV2):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
 
-  def model(self):
+  def model(self, x):
     # (channels, num_blocks, stride, expansion)
     self.fist_conv_stride = 1
 
@@ -222,4 +221,4 @@ class MobileNetV2Cifar10Hyper(_MobileNetV2):
                            (96,  block[4], 1, 6),
                            (160, block[5], 2, 6),
                            (320, block[6], 1, 6)]
-    super().model()
+    super().model(x)

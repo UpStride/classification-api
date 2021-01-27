@@ -1,5 +1,5 @@
 import tensorflow as tf
-from .generic_model import GenericModel
+from .generic_model import GenericModelBuilder
 import tensorflow.keras as tfk
 from tensorflow.keras import activations, Sequential
 from collections import namedtuple
@@ -325,7 +325,7 @@ class NetworkImageNet(DataFormatHandler):
 
 
 
-class PdartsImageNet(GenericModel):
+class PdartsImageNet(GenericModelBuilder):
   def __init__(self, *args, **kwargs):
     define_drop_path_prob(kwargs['args']['drop_path_prob'])
     super().__init__(*args, **kwargs)
@@ -334,12 +334,12 @@ class PdartsImageNet(GenericModel):
     self.n_layers = 14
     self._auxiliary = False
 
-  def model(self):
-    self.x = self.layers().Identity()(self.x)  # This op is needed so Upstride can insert its custom op
-    input = self.x
+  def model(self, x):
+    x = self.layers.Identity()(x)  # This op is needed so Upstride can insert its custom op
+    input = x
 
     # Stem 0
-    layers = self.layers()
+    layers = self.layers
     x = layers.Conv2D(self.c // 2, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(input)
     x = layers.BatchNormalization(axis=self.axis)(x)
     x = layers.ReLU()(x)
@@ -360,16 +360,16 @@ class PdartsImageNet(GenericModel):
         reduction = True
       else:
         reduction = False
-      cell = Cell(self.layers(), self.genotype, C_curr, reduction, reduction_prev)
+      cell = Cell(self.layers, self.genotype, C_curr, reduction, reduction_prev)
       s0, s1 = s1, cell(s0, s1, drop_path_prob)
 
       reduction_prev = reduction
       if i == 2 * self.n_layers // 3 and self._auxiliary and self.train:
-        self.logits_aux = self.auxiliary_head(self.layers(), s1)
+        self.logits_aux = self.auxiliary_head(self.layers, s1)
 
-    self.x = self.layers().AveragePooling2D(7)(s1)
-    self.x = layers.Flatten()(self.x)
-    # return self.x, logits_aux # TODO handle logits_aux
+    x = self.layers.AveragePooling2D(7)(s1)
+    x = layers.Flatten()(x)
+    return x, logits_aux
 
   def auxiliary_head(self, layers, input_tensor):
     """assuming input size 14x14"""
@@ -386,7 +386,7 @@ class PdartsImageNet(GenericModel):
     return x
 
 
-class PdartsCIFAR(GenericModel):
+class PdartsCIFAR(GenericModelBuilder):
   def __init__(self, args, **kwargs):
     # define_drop_path_prob(kwargs['args']['drop_path_prob'])
     self.c = 36  # number of channels at the beginning of the network
@@ -395,7 +395,7 @@ class PdartsCIFAR(GenericModel):
     self._auxiliary = True
     super().__init__(args, **kwargs)
 
-  def model(self):
+  def model(self, x):
     # config 
     self.model_class = PDartsModel
 
@@ -405,8 +405,8 @@ class PdartsCIFAR(GenericModel):
     # Stem
     self.axis = -1  # TODO correct for channel first
 
-    layers = self.layers()
-    x = layers.Conv2D(self.c * 3, kernel_size=3, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(self.x)
+    layers = self.layers
+    x = layers.Conv2D(self.c * 3, kernel_size=3, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(x)
     s0 = layers.BatchNormalization(axis=self.axis)(x)
     s1 = s0
 
@@ -419,13 +419,14 @@ class PdartsCIFAR(GenericModel):
         reduction = True
       else:
         reduction = False
-      s0, s1 = s1, Cell(self.layers(), self.genotype, C_curr, reduction, reduction_prev)([s0, s1, drop_path_prob])
+      s0, s1 = s1, Cell(self.layers, self.genotype, C_curr, reduction, reduction_prev)([s0, s1, drop_path_prob])
 
       reduction_prev = reduction
       if i == 2 * self.n_layers // 3 and self._auxiliary:
-        self.logits_aux = self.auxiliary_head(self.layers(), s1)
+        self.logits_aux = self.auxiliary_head(self.layers, s1)
 
-    self.x = self.layers().GlobalAveragePooling2D()(s1)
+    x = self.layers.GlobalAveragePooling2D()(s1)
+    return x, self.logits_aux
 
   def auxiliary_head(self, layers, input_tensor):
     """assuming input size 14x14"""

@@ -28,7 +28,7 @@ Results on Cifar10 reported on the paper:
 import warnings
 from tensorflow.python.keras.regularizers import l2
 import tensorflow as tf
-from .generic_model import GenericModel
+from .generic_model import GenericModelBuilder
 
 
 def correct_pad(backend, inputs, kernel_size):
@@ -56,7 +56,7 @@ def correct_pad(backend, inputs, kernel_size):
           (correct[1] - adjust[1], correct[1]))
 
 
-class NASNet(GenericModel):
+class NASNet(GenericModelBuilder):
   def __init__(self, *args, **kwargs):
     self.backend = tf.keras.backend
     self.keras_utils = tf.keras.utils
@@ -75,7 +75,7 @@ class NASNet(GenericModel):
         a Keras tensor
     '''
 
-    layers = self.layers()
+    layers = self.layers
     channel_dim = 1 if self.backend.image_data_format() == 'channels_first' else -1
 
     with self.backend.name_scope('separable_conv_block_%s' % id):
@@ -108,7 +108,7 @@ class NASNet(GenericModel):
         an adjusted Keras tensor
     '''
 
-    layers = self.layers()
+    layers = self.layers
 
     channel_dim = 1 if self.backend.image_data_format() == 'channels_first' else -1
     img_dim = 2 if self.backend.image_data_format() == 'channels_first' else -2
@@ -171,7 +171,7 @@ class NASNet(GenericModel):
         a Keras tensor
     '''
 
-    layers = self.layers()
+    layers = self.layers
 
     channel_dim = 1 if self.backend.image_data_format() == 'channels_first' else -1
 
@@ -225,7 +225,7 @@ class NASNet(GenericModel):
     '''
     """"""
 
-    layers = self.layers()
+    layers = self.layers
     channel_dim = 1 if self.backend.image_data_format() == 'channels_first' else -1
 
     with self.backend.name_scope('reduction_A_block_%s' % id):
@@ -283,7 +283,7 @@ class NASNet(GenericModel):
         a keras Tensor
     '''
 
-    layers = self.layers()
+    layers = self.layers
 
     img_height = 1 if self.backend.image_data_format() == 'channels_last' else 2
     img_width = 2 if self.backend.image_data_format() == 'channels_last' else 3
@@ -319,7 +319,7 @@ class NASNet(GenericModel):
 
     return auxiliary_x
 
-  def model(self):
+  def model(self, x):
     """Instantiates a NASNet architecture.
     Note that only TensorFlow is supported for now,
     therefore it only works with the data format
@@ -394,7 +394,7 @@ class NASNet(GenericModel):
             backend that does not support separable convolutions.
     """
 
-    layers = self.layers()
+    layers = self.layers
 
     if self.backend.image_data_format() != 'channels_last':
       warnings.warn('The NASNet family of models is only available '
@@ -425,57 +425,57 @@ class NASNet(GenericModel):
       filters += 1
 
     if self.initial_reduction:
-      self.x = layers.Conv2D(stem_filters, (3, 3), strides=(2, 2), padding='valid', use_bias=False, name='stem_conv1',
-                             kernel_initializer='he_normal', kernel_regularizer=l2(self.weight_decay))(self.x)
+      x = layers.Conv2D(stem_filters, (3, 3), strides=(2, 2), padding='valid', use_bias=False, name='stem_conv1',
+                             kernel_initializer='he_normal', kernel_regularizer=l2(self.weight_decay))(x)
     else:
-      self.x = layers.Conv2D(stem_filters, (3, 3), strides=(1, 1), padding='same', use_bias=False, name='stem_conv1',
-                             kernel_initializer='he_normal', kernel_regularizer=l2(self.weight_decay))(self.x)
+      x = layers.Conv2D(stem_filters, (3, 3), strides=(1, 1), padding='same', use_bias=False, name='stem_conv1',
+                             kernel_initializer='he_normal', kernel_regularizer=l2(self.weight_decay))(x)
 
-    self.x = layers.BatchNormalization(axis=channel_dim, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
-                                       name='stem_bn1')(self.x)
+    x = layers.BatchNormalization(axis=channel_dim, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
+                                       name='stem_bn1')(x)
 
     p = None
     if self.initial_reduction:  # imagenet / mobile mode
-      self.x, p = self._reduction_A(self.x, p, filters // (self.filters_multiplier ** 2), self.weight_decay, id='stem_1')
-      self.x, p = self._reduction_A(self.x, p, filters // self.filters_multiplier, self.weight_decay, id='stem_2')
+      x, p = self._reduction_A(x, p, filters // (self.filters_multiplier ** 2), self.weight_decay, id='stem_1')
+      x, p = self._reduction_A(x, p, filters // self.filters_multiplier, self.weight_decay, id='stem_2')
 
     for i in range(self.nb_blocks):
-      self.x, p = self._normal_A(self.x, p, filters, self.weight_decay, id='%d' % (i))
+      x, p = self._normal_A(x, p, filters, self.weight_decay, id='%d' % (i))
 
-    self.x, p0 = self._reduction_A(self.x, p, filters * self.filters_multiplier, self.weight_decay, id='reduce_%d' % (self.nb_blocks))
+    x, p0 = self._reduction_A(x, p, filters * self.filters_multiplier, self.weight_decay, id='reduce_%d' % (self.nb_blocks))
 
     p = p0 if not self.skip_reduction_layer_input else p
 
     for i in range(self.nb_blocks):
-      self.x, p = self._normal_A(self.x, p, filters * self.filters_multiplier, self.weight_decay, id='%d' % (self.nb_blocks + i + 1))
+      x, p = self._normal_A(x, p, filters * self.filters_multiplier, self.weight_decay, id='%d' % (self.nb_blocks + i + 1))
 
     auxiliary_x = None
     if not self.initial_reduction:  # imagenet / mobile mode
       if self.use_auxiliary_branch:
-        auxiliary_x = self._add_auxiliary_head(self.x, self.label_dim, self.weight_decay, self.pooling, self.include_top)
+        auxiliary_x = self._add_auxiliary_head(x, self.label_dim, self.weight_decay, self.pooling, self.include_top)
 
-    self.x, p0 = self._reduction_A(self.x, p, filters * self.filters_multiplier ** 2, self.weight_decay, id='reduce_%d' % (2 * self.nb_blocks))
+    x, p0 = self._reduction_A(x, p, filters * self.filters_multiplier ** 2, self.weight_decay, id='reduce_%d' % (2 * self.nb_blocks))
 
     if self.initial_reduction:  # CIFAR mode
       if self.use_auxiliary_branch:
-        auxiliary_x = self._add_auxiliary_head(self.x, self.label_dim, self.weight_decay, self.pooling, self.include_top)
+        auxiliary_x = self._add_auxiliary_head(x, self.label_dim, self.weight_decay, self.pooling, self.include_top)
 
     p = p0 if not self.skip_reduction_layer_input else p
 
     for i in range(self.nb_blocks):
-      self.x, p = self._normal_A(self.x, p, filters * self.filters_multiplier ** 2, self.weight_decay, id='%d' % (2 * self.nb_blocks + i + 1))
+      x, p = self._normal_A(x, p, filters * self.filters_multiplier ** 2, self.weight_decay, id='%d' % (2 * self.nb_blocks + i + 1))
 
-    self.x = layers.Activation('relu')(self.x)
+    x = layers.Activation('relu')(x)
 
     if self.include_top:
-      self.x = layers.GlobalAveragePooling2D()(self.x)
-      self.x = layers.Dropout(self.dropout)(self.x)
-      self.x = layers.Dense(self.label_dim, kernel_regularizer=l2(self.weight_decay), name='logit')(self.x)
+      x = layers.GlobalAveragePooling2D()(x)
+      x = layers.Dropout(self.dropout)(x)
+      x = layers.Dense(self.label_dim, kernel_regularizer=l2(self.weight_decay), name='logit')(x)
     else:
       if self.pooling == 'avg':
-        self.x = layers.GlobalAveragePooling2D()(self.x)
+        x = layers.GlobalAveragePooling2D()(x)
       elif self.pooling == 'max':
-        self.x = layers.GlobalMaxPooling2D()(self.x)
+        x = layers.GlobalMaxPooling2D()(x)
 
     # NASNet with auxiliary
     if self.use_auxiliary_branch:
@@ -483,6 +483,7 @@ class NASNet(GenericModel):
 
     if old_data_format:
       self.backend.set_image_data_format(old_data_format)
+    return x
 
 
 class NASNetLarge(NASNet):

@@ -30,7 +30,7 @@ every  3  epochs.   We  use dropout of 0.8, and l2 weight decay 1e-5 and the sam
 Finally we use expo-nential moving average with decay 0.9999. '''
 
 import tensorflow as tf 
-from .generic_model import GenericModel
+from .generic_model import GenericModelBuilder
 
 BATCH_NORM_MOMEMTUM = 0.9 
 KERNEL_REGULARIZER = tf.keras.regularizers.l2(l2=1e-3) 
@@ -83,114 +83,117 @@ def hard_sigmoid(x):
 def hard_swish(x):
   return x * hard_sigmoid(x) 
 
-class _MobileNetV3(GenericModel):
+class _MobileNetV3(GenericModelBuilder):
   def __init__(self, *args, **kwargs):
     self.last_block_output_shape = 3
     self.channel_axis = 1 if tf.keras.backend.image_data_format() == 'channels_first' else -1
     super().__init__(*args, **kwargs)
 
-  def _inverted_res_block(self, expansion, filters, kernel_size, stride, se_ratio,
+  def _inverted_res_block(self, x, expansion, filters, kernel_size, stride, se_ratio,
                           activation_fn, block_id):
-    layers = self.layers()  # we don't want to switch between tf and upstride in this block
-    inputs = self.x
+    layers = self.layers
+    inputs = x
     prefix = 'expanded_conv/'
     infilters = self.last_block_output_shape 
     if block_id:
       # Expand
       prefix = 'expanded_conv_{}/'.format(block_id)
-      self.x = layers.Conv2D(
+      x = layers.Conv2D(
           _make_divisble(infilters * expansion),
           kernel_size=1,
           kernel_regularizer=KERNEL_REGULARIZER,
           padding='same',
           use_bias=False,
           name=prefix + 'expand')(
-              self.x)
-      self.x = layers.BatchNormalization(
+              x)
+      x = layers.BatchNormalization(
           axis=self.channel_axis,
           epsilon=1e-3,
           momentum=BATCH_NORM_MOMEMTUM,
           name=prefix + 'expand/BatchNorm')(
-              self.x)
-      self.x = layers.Activation(activation_fn, name=prefix + '1a_' + activation_fn.__name__)(self.x)
+              x)
+      x = layers.Activation(activation_fn, name=prefix + '1a_' + activation_fn.__name__)(x)
     if stride == 2:
-      self.x = layers.ZeroPadding2D(
-          padding=correct_pad(self.x, kernel_size),
+      x = layers.ZeroPadding2D(
+          padding=correct_pad(x, kernel_size),
           name=prefix + 'depthwise/pad')(
-              self.x)
-    self.x = layers.DepthwiseConv2D(
+              x)
+    x = layers.DepthwiseConv2D(
         kernel_size,
         depthwise_regularizer=KERNEL_REGULARIZER,
         strides=stride,
         padding='same' if stride == 1 else 'valid',
         use_bias=False,
         name=prefix + 'depthwise')(
-            self.x)
-    self.x = layers.BatchNormalization(
+            x)
+    x = layers.BatchNormalization(
         axis=self.channel_axis,
         epsilon=1e-3,
         momentum=BATCH_NORM_MOMEMTUM,
         name=prefix + 'depthwise/BatchNorm')(
-            self.x)
-    self.x = layers.Activation(activation_fn, name=prefix + activation_fn.__name__)(self.x)
+            x)
+    x = layers.Activation(activation_fn, name=prefix + activation_fn.__name__)(x)
 
     if se_ratio:
-      self._se_block(_make_divisble(infilters * expansion), se_ratio, prefix)
+      x = self._se_block(x, _make_divisble(infilters * expansion), se_ratio, prefix)
 
-    self.x = layers.Conv2D(
+    x = layers.Conv2D(
         filters,
         kernel_size=1,
         kernel_regularizer=KERNEL_REGULARIZER,
         padding='same',
         use_bias=False,
         name=prefix + 'project')(
-            self.x)
-    self.x = layers.BatchNormalization(
+            x)
+    x = layers.BatchNormalization(
         axis=self.channel_axis,
         epsilon=1e-3,
         momentum=BATCH_NORM_MOMEMTUM,
         name=prefix + 'project/BatchNorm')(
-            self.x)
+            x)
 
     if stride == 1 and infilters == filters:
-      self.x = layers.Add(name=prefix + 'Add')([inputs, self.x])
+      x = layers.Add(name=prefix + 'Add')([inputs, x])
 
     self.last_block_output_shape = filters
+    return x
 
-  def _se_block(self, filters, se_ratio, prefix):
-    inputs_seblock = self.x
-    layers = self.layers()
-    self.x = layers.GlobalAveragePooling2D(name=prefix + 'squeeze_excite/AvgPool')(self.x)
-    self.x = layers.Dense(
+  def _se_block(self, x, filters, se_ratio, prefix):
+    inputs_seblock = x
+    layers = self.layers
+    x = layers.GlobalAveragePooling2D(name=prefix + 'squeeze_excite/AvgPool')(x)
+    x = layers.Dense(
         _make_divisble(filters * se_ratio),
         kernel_regularizer=KERNEL_REGULARIZER,
         name=prefix + 'squeeze_excite/Dense')(
-            self.x)
-    self.x = layers.ReLU(name=prefix + 'squeeze_excite/Relu')(self.x)
-    self.x = layers.Dense(
+            x)
+    x = layers.ReLU(name=prefix + 'squeeze_excite/Relu')(x)
+    x = layers.Dense(
         filters,
         kernel_regularizer=KERNEL_REGULARIZER,
         name=prefix + 'squeeze_excite/Dense_1')(
-            self.x)
-    self.x = layers.Activation(hard_sigmoid, name=prefix + 'squeeze_excite/Hard_Sigmoid')(self.x)
-    self.x = layers.Multiply(name=prefix + 'squeeze_excite/Mul')([inputs_seblock, self.x])
+            x)
+    x = layers.Activation(hard_sigmoid, name=prefix + 'squeeze_excite/Hard_Sigmoid')(x)
+    x = layers.Multiply(name=prefix + 'squeeze_excite/Mul')([inputs_seblock, x])
+    return x
 
-  def model(self):
-    self.x = self.layers().Conv2D(
+  def model(self, x):
+    x = self.layers.Conv2D(
         16 // self.factor,
         kernel_size=3,
         kernel_regularizer=KERNEL_REGULARIZER,
         strides=self.first_conv_stride,
         padding='same',
         use_bias=False,
-        name='Conv')(self.x)
-    self.x = self.layers().BatchNormalization(
+        name='Conv')(x)
+    x = self.layers.BatchNormalization(
         axis=self.channel_axis, epsilon=1e-3,
-        momentum=BATCH_NORM_MOMEMTUM, name='Conv/BatchNorm')(self.x)
-    self.x = self.layers().Activation(hard_swish, name='Conv/Hard_Swish')(self.x)
+        momentum=BATCH_NORM_MOMEMTUM, name='Conv/BatchNorm')(x)
+    x = self.layers.Activation(hard_swish, name='Conv/Hard_Swish')(x)
 
     for i, layer in enumerate(self.config):
-      self._inverted_res_block(
+      x = self._inverted_res_block(
+        x,
         layer[0], # expansion
         _make_divisble(layer[1] * self.alpha) // self.factor, # filters
         layer[2], # kernel
@@ -200,46 +203,47 @@ class _MobileNetV3(GenericModel):
         i  # block_id
         )
     
-    if type(self.x) == list:
-      last_conv_ch = _make_divisble(self.x[0].shape[self.channel_axis] * 6)
+    if type(x) == list:
+      last_conv_ch = _make_divisble(x[0].shape[self.channel_axis] * 6)
     else:
-      last_conv_ch = _make_divisble(self.x.shape[self.channel_axis] * 6)
+      last_conv_ch = _make_divisble(x.shape[self.channel_axis] * 6)
 
 
     # if the width multiplier is greater than 1 we
     # increase the number of output channels
     if self.alpha > 1.0: 
       self.last_point_ch = _make_divisble(self.last_point_ch * self.alpha)
-    self.x = self.layers().Conv2D(
+    x = self.layers.Conv2D(
         last_conv_ch,
         kernel_size=1,
         kernel_regularizer=KERNEL_REGULARIZER,
         padding='same',
         use_bias=False,
-        name='Conv_1')(self.x)
-    self.x = self.layers().BatchNormalization(
+        name='Conv_1')(x)
+    x = self.layers.BatchNormalization(
         axis=self.channel_axis, epsilon=1e-3,
-        momentum=BATCH_NORM_MOMEMTUM, name='Conv_1/BatchNorm')(self.x)
-    self.x = self.layers().Activation(hard_swish, name='Conv_1/Hard_Swish')(self.x)
+        momentum=BATCH_NORM_MOMEMTUM, name='Conv_1/BatchNorm')(x)
+    x = self.layers.Activation(hard_swish, name='Conv_1/Hard_Swish')(x)
     
-    self.x = self.layers().GlobalAveragePooling2D()(self.x)
+    x = self.layers.GlobalAveragePooling2D()(x)
     if self.channel_axis == 1:
-      self.x = self.layers().Reshape((last_conv_ch, 1, 1))(self.x)
+      x = self.layers.Reshape((last_conv_ch, 1, 1))(x)
     else:
-      self.x = self.layers().Reshape((1, 1, last_conv_ch))(self.x)
+      x = self.layers.Reshape((1, 1, last_conv_ch))(x)
     if self.dropout_rate > 0:
-      self.x = self.layers().Dropout(self.dropout_rate)(self.x)
+      x = self.layers.Dropout(self.dropout_rate)(x)
     
-    self.x = self.layers().Conv2D(
+    x = self.layers.Conv2D(
         self.last_point_ch // self.factor,
         kernel_size=1,
         kernel_regularizer=KERNEL_REGULARIZER,
         padding='same',
         use_bias=False,
-        name='Conv_2')(self.x)
-    self.x = self.layers().Activation(hard_swish, name='Conv_2/Hard_Swish')(self.x)
+        name='Conv_2')(x)
+    x = self.layers.Activation(hard_swish, name='Conv_2/Hard_Swish')(x)
 
-    self.x = self.layers().Flatten()(self.x)
+    x = self.layers.Flatten()(x)
+    return x
 
 
   

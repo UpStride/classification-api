@@ -1,8 +1,8 @@
 import tensorflow as tf
-from .generic_model import GenericModel
+from .generic_model import GenericModelBuilder
 
 
-class ComplexNet(GenericModel):
+class ComplexNet(GenericModelBuilder):
   def __init__(self, *args, **kwargs):
     self.bn_args = {
         "axis": -1,
@@ -16,59 +16,61 @@ class ComplexNet(GenericModel):
     }
     super().__init__(*args, **kwargs)
 
-  def residual_block(self, channels: int, downsample=False):
-    layers = self.layers()
-    x_init = self.x
+  def residual_block(self, x, channels: int, downsample=False):
+    layers = self.layers
+    x_init = x
     strides = (2, 2) if downsample else (1, 1)
-    self.x = layers.BatchNormalization(**self.bn_args)(self.x)
-    self.x = layers.Activation('relu')(self.x)
-    self.x = layers.Conv2D(channels, 3, strides, **self.conv_args)(self.x)
-    self.x = layers.BatchNormalization(**self.bn_args)(self.x)
-    self.x = layers.Activation('relu')(self.x)
-    self.x = layers.Conv2D(channels, 3, **self.conv_args)(self.x)
+    x = layers.BatchNormalization(**self.bn_args)(x)
+    x = layers.Activation('relu')(x)
+    x = layers.Conv2D(channels, 3, strides, **self.conv_args)(x)
+    x = layers.BatchNormalization(**self.bn_args)(x)
+    x = layers.Activation('relu')(x)
+    x = layers.Conv2D(channels, 3, **self.conv_args)(x)
     if not downsample:
-      self.x = layers.Add()([self.x, x_init])
+      x = layers.Add()([x, x_init])
     else:
       x_init = layers.Conv2D(channels, 1, 2, **self.conv_args)(x_init)
-      self.x = layers.Concatenate()([x_init, self.x])
+      x = layers.Concatenate()([x_init, x])
+    return x
 
-  def learnVectorBlock(self):
-    self.x = tf.keras.layers.BatchNormalization(**self.bn_args)(self.x)
-    self.x = tf.keras.layers.Activation('relu')(self.x)
-    self.x = tf.keras.layers.Convolution2D(3, self.lvb_kernel_size, kernel_initializer='he_normal', **self.conv_args)(self.x)
-    self.x = tf.keras.layers.BatchNormalization(**self.bn_args)(self.x)
-    self.x = tf.keras.layers.Activation('relu')(self.x)
-    self.x = tf.keras.layers.Convolution2D(3, self.lvb_kernel_size, kernel_initializer='he_normal', **self.conv_args)(self.x)
+  def learnVectorBlock(self, x):
+    x = tf.keras.layers.BatchNormalization(**self.bn_args)(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.Convolution2D(3, self.lvb_kernel_size, kernel_initializer='he_normal', **self.conv_args)(x)
+    x = tf.keras.layers.BatchNormalization(**self.bn_args)(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.Convolution2D(3, self.lvb_kernel_size, kernel_initializer='he_normal', **self.conv_args)(x)
+    return x
 
-  def model(self):
+  def model(self, x):
     n_channels = self.n_channels_type_0 // self.factor
-    layers = self.layers()
+    layers = self.layers
     if layers == tf.keras.layers:
       print("real definition")
-      r = self.x
-      self.learnVectorBlock()
-      self.x = tf.keras.layers.Concatenate()([r, self.x])
+      r = x
+      x = self.learnVectorBlock(x)
+      x = tf.keras.layers.Concatenate()([r, x])
       self.conv_args['kernel_initializer'] = 'he_normal'
 
-    self.x = self.layers().Conv2D(n_channels, 3, **self.conv_args)(self.x)
-    self.x = self.layers().BatchNormalization(**self.bn_args)(self.x)
-    self.x = self.layers().Activation('relu')(self.x)
+    x = self.layers.Conv2D(n_channels, 3, **self.conv_args)(x)
+    x = self.layers.BatchNormalization(**self.bn_args)(x)
+    x = self.layers.Activation('relu')(x)
 
     # First stage
     for i in range(self.n_blocks):  # -1 because the last one is a downsample
-      self.residual_block(n_channels)
-    self.residual_block(n_channels, True)
+      x = self.residual_block(x, n_channels)
+    x = self.residual_block(x, n_channels, True)
 
     # stage 2
     for i in range(self.n_blocks -  1):  # -1 because the last one is a downsample and one is removed (see paper)
-      self.residual_block(n_channels * 2)
-    self.residual_block(n_channels * 2, True)
+      x = self.residual_block(x, n_channels * 2)
+    x = self.residual_block(x, n_channels * 2, True)
 
     # stage 3
     for i in range(self.n_blocks -  1):  # -1 because the last one is a downsample and one is removed (see paper)
-      self.residual_block(n_channels * 4)
+      x = self.residual_block(x, n_channels * 4)
 
-    self.x = self.layers().GlobalAveragePooling2D()(self.x)
+    x = self.layers.GlobalAveragePooling2D()(x)
 
 
 # Definition from the Quaternion Paper

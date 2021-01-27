@@ -1,125 +1,136 @@
+from typing import List
 import tensorflow as tf
 
-framework_list = [
-    "tensorflow",
-    "upstride_type0",
-    "upstride_type1",
-    "upstride_type2",
-    "upstride_type3",
-    "mix_type0",
-    "mix_type1",
-    "mix_type2",
-    "mix_type3",
-]
+"""
+Question:
+- Weight decay ?
+- kwargs for specific stuff ?
+"""
 
 
-class Layer:
-  def __init__(self, framework, n_layers_before_tf):
-    self.tf_layers = tf.keras.layers
-    self.up_layers = None
-    self.n_layers = 0
-    self.n_layers_before_tf = n_layers_before_tf
-    self.framework = framework
-
-    if framework != "tensorflow":
-      if "0" in framework:
-        import upstride.type0.tf.keras.layers as up_layers
-        self.up_layers = up_layers
-      if "1" in framework:
-        import upstride.type1.tf.keras.layers as up_layers
-        self.up_layers = up_layers
-      if "2" in framework:
-        import upstride.type2.tf.keras.layers as up_layers
-        self.up_layers = up_layers
-      if "3" in framework:
-        import upstride.type3.tf.keras.layers as up_layers
-        self.up_layers = up_layers
-
-  def __call__(self,):
-    if self.framework == "tensorflow":
-      return self.tf_layers
-    elif 'upstride' in self.framework:
-      return self.up_layers
-    # At this point, self.framework is "mix_*", so we need to count the number of layers in the network
-    # to know when to shift engine
-    self.n_layers += 1
-    if self.n_layers - 1 < self.n_layers_before_tf:
-      return self.up_layers
-    return self.tf_layers
+def load_upstride(upstride_type: int):
+  """This function load one of upstride types 
+  """
+  if upstride_type == -1:
+    return None
+  if upstride_type == 0:
+    import upstride.type0.tf.keras.layers as up_layers
+    return up_layers
+  if upstride_type == 1:
+    import upstride.type1.tf.keras.layers as up_layers
+    return up_layers
+  if upstride_type == 2:
+    import upstride.type2.tf.keras.layers as up_layers
+    return up_layers
+  if upstride_type == 3:
+    import upstride.type3.tf.keras.layers as up_layers
+    return up_layers
 
 
-class GenericModel:
-  def __init__(self, args, weight_decay=None, load_searched_arch=None):
-    """[summary]
+class GenericModelBuilder:
+  def __init__(self, input_size, changing_ids: List[str], num_classes, factor=1, upstride_type=-1, tf2upstride_strategy="", upstride2tf_strategy="", weight_decay=0, **kwargs):
+    self.input_size = input_size
+    self.num_classes = num_classes
+    self.factor = factor
+    self.upstride_type = upstride_type
+    self.tf2upstride_strategy = tf2upstride_strategy
+    self.upstride2tf_strategy = upstride2tf_strategy
 
-    Args:
-        args: Dict containing
-          - framework
-          - factor : Defaults to 1.
-          - input_size : Defaults to (224, 224, 3).
-          - n_layers_before_tf
-          - name
-          - drop_path_prob
-          - num_classes (int): Defaults to 1000.
-          - conversion_params (dict): containing the params for TF2UpStride & UpStride2TF conversion
-        cpu (bool, optional): [description]. Defaults to False.
-        hp ([type], optional): [description]. Defaults to None.
-        load_searched_arch (str, optional): Yaml file that provide the model definition found by DNAS. Defaults to None.
-    """
-    self.hp = None  # for keras tuner
-    self._layers = Layer(args['framework'], args['n_layers_before_tf'])
-    self._previous_layer = tf.keras.layers
-    inputs = tf.keras.layers.Input(shape=args['input_size'])
-    self.x = inputs
-    conversion_params = args['conversion_params']
-    self.output_layer_before_up2tf = conversion_params['output_layer_before_up2tf']
-    self.tf2up_strategy = conversion_params['tf2up_strategy']
-    self.up2tf_strategy = conversion_params['up2tf_strategy']
+    # Configure list of ids to change framework
+    if upstride_type == -1:
+      # then no switch between tf and upstride
+      self.changing_ids = []
+    elif changing_ids == []:
+      # then set default parameters
+      self.changing_ids = ['beginning', 'end_after_dense']
+    else:
+      self.changing_ids = changing_ids
+
+    # kwargs contains special parameter that can be specific for one model. For instance
+    # - load_searched_arch for architecture search method
+    # - drop_path_prob for fb-net
+    # - conversion_params if tf2upstride or upstride2tf need specific parameters
+    # - hp : the keras-tuner hyperparameters
+    self.kwargs = kwargs 
+
+    # self.layers is the layers package to use when building the neural network
+    self.layers = tf.keras.layers 
+    self.upstride_layers = load_upstride(upstride_type)
+    self._is_using_tf_layers = True
+
+    # weight_regularizer can be call in the model definition in any subclass of GenericModel
     self.weight_regularizer = tf.keras.regularizers.l2(l=weight_decay)
 
-    # if the model use auxiliary logits then it will set this variable to a different value than None
-    self.logits_aux = None
-    # if the model use other inputs then it will set this variable to the list of input to add
-    self.inputs = []
     # if the model use custom keras Model then overide this
+    # This is usefull for SAM method
     self.model_class = tf.keras.Model
 
-    self.factor = args['factor']
-    self.label_dim = args['num_classes']
-    self.model()
+    # if the model use other inputs than the image then it need to add these tensors in this list
+    # This is usefull for P-Darts, FB-NET and SAM methods
+    self.inputs = []
 
-    # output is the list of the vectors to use to compute classification losses
-    output_tensors = [self.x]
-    if self.logits_aux is not None:
-      output_tensors.append(self.logits_aux)
 
-    output_logits = []
-    for i, output_tensor in enumerate(output_tensors):
-      x = output_tensor
-      if self.output_layer_before_up2tf:
-        x = self.layers().Dense(self.label_dim, use_bias=True, name=f'Logits_{i}', kernel_regularizer=self.weight_regularizer)(x)
-      # Upstride to TF
-      if self._previous_layer != tf.keras.layers:
-        x = self._previous_layer.Upstride2TF(self.up2tf_strategy)(x)
-      if not self.output_layer_before_up2tf:
-        x = tf.keras.layers.Dense(self.label_dim, use_bias=True, name=f'Logits_{i}', kernel_regularizer=self.weight_regularizer)(x)
-      x = tf.keras.layers.Activation("softmax", dtype=tf.float32)(x)  # dtype float32 is important because of mixed precision
-      output_logits.append(x)
-    self.model = self.model_class([inputs] + self.inputs, output_logits)
-    # self.model = tf.keras.Model(inputs, output_logits)
+  def maybe_change_framework(self, id, inputs):
+    """ When defining a custom model, this function should be called every time it can make sense to switch
+    between tensorflow and upstride
 
-  def layers(self):
-    """return the layer to use and automatically convert between tensorflow and upstride
+    Args:
+      x: can be a tensor or a list of tensors.
+
+    Return: a tensor if x is a tensor, a list of tensors if x is a list of tensors
     """
-    l = self._layers()
-    if l != self._previous_layer and self._previous_layer == tf.keras.layers:
-      # then switch from tf to upstride
-      self.x = l.TF2Upstride(self.tf2up_strategy)(self.x)
-    if l != self._previous_layer and l == tf.keras.layers:
-      # then switch from upstride to tf
-      self.x = self._previous_layer.Upstride2TF(self.up2tf_strategy)(self.x)
-    self._previous_layer = l
-    return l
 
-  def model(self):
+    inputs_is_single_tensor = False
+    if type(inputs) is not list:
+      inputs_is_single_tensor = True
+      inputs = [inputs]
+
+    if id in self.changing_ids:
+      if self._is_using_tf_layers:
+        # Then converting from Tensorflow to Upstride
+        self._is_using_tf_layers = False
+        self.layers = self.upstride_layers
+
+        out_tensors = []
+        for x in inputs:
+          out_tensors.append(self.upstride_layers.TF2Upstride(self.tf2upstride_strategy)(x))
+      else:
+        # Then converting from Upstride to Tensorflow
+        self._is_using_tf_layers = True
+        self.layers = tf.keras.layers
+
+        out_tensors = []
+        for x in inputs:
+          out_tensors.append(self.upstride_layers.Upstride2TF(self.upstride2tf_strategy)(x))
+    else:
+      # Don't change the input
+      out_tensors = inputs
+
+    if inputs_is_single_tensor:
+      out_tensors = out_tensors[0]
+
+    return out_tensors
+
+  def model(self, x):
     raise NotImplementedError("you need to overide method model")
+
+  def build(self):
+    inputs = tf.keras.layers.Input(shape=self.input_size)
+    x = self.maybe_change_framework("beginning", inputs)
+    # output_tensors is the list of the vectors to use to compute classification losses (main output + auxilary losses)
+    output_tensors = self.model(x)
+    if type(output_tensors) != list:
+      output_tensors = [output_tensors]
+
+    output_tensors = self.maybe_change_framework("end_before_dense", output_tensors)
+
+    for i, x in enumerate(output_tensors):
+      output_tensors[i] = self.layers.Dense(self.num_classes, use_bias=True, name=f'Logits_{i}', kernel_regularizer=self.weight_regularizer)(x)
+    output_tensors = self.maybe_change_framework("end_after_dense", output_tensors)
+
+    for i, x in enumerate(output_tensors):
+      output_tensors[i] = tf.keras.layers.Activation("softmax", dtype=tf.float32)(x)  # dtype float32 is important because of mixed precision
+
+    model = self.model_class([inputs], output_tensors)
+
+    return model
