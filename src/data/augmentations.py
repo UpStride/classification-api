@@ -553,11 +553,13 @@ class Translate:
     dx = tf.random.uniform(shape=[], minval=-width_shift_range, maxval=width_shift_range, dtype=tf.int32)
     dy = tf.random.uniform(shape=[], minval=-height_shift_range, maxval=height_shift_range, dtype=tf.int32)
 
-    prob_dx = tf.random.uniform(shape=[], minval=0., maxval=1., dtype=tf.float32)
-    prob_dy = tf.random.uniform(shape=[], minval=0., maxval=1., dtype=tf.float32)
+    # Commenting this code to reduce the the probably that translation might not be applied. 
 
-    dx = tf.cond(tf.math.less(prob_dx, 0.5), lambda: 0, lambda: dx)
-    dy = tf.cond(tf.math.less(prob_dy, 0.5), lambda: 0, lambda: dy)
+    # prob_dx = tf.random.uniform(shape=[], minval=0., maxval=1., dtype=tf.float32)
+    # prob_dy = tf.random.uniform(shape=[], minval=0., maxval=1., dtype=tf.float32)
+
+    # dx = tf.cond(tf.math.less(prob_dx, 0.5), lambda: 0, lambda: dx)
+    # dy = tf.cond(tf.math.less(prob_dy, 0.5), lambda: 0, lambda: dy)
 
     # translate x
     pad_left = tf.math.maximum(dx, 0)

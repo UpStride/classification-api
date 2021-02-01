@@ -16,6 +16,7 @@ from src.models.test_pdart import *
 sys.path.append('scripts')
 
 from scripts.test_tfrecord_writer import TestTfrecordWriter
+from scripts.test_compare_dataloader import TestCompareDataLoader
 
 
 if __name__ == "__main__":
