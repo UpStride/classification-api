@@ -72,7 +72,7 @@ class _FBNet_MobileNetV2(GenericModelBuilder):
     if stride == 2:
       x = layers.ZeroPadding2D(padding=correct_pad(x, 3), name=prefix + 'pad')(x)
     x = layers.DepthwiseConv2D(kernel_size=3, strides=stride, activation=None, use_bias=False, padding='same' if stride == 1 else 'valid',
-                                    name=prefix + 'depthwise', kernel_regularizer=weight_regularizer)(x)
+                                    name=prefix + 'depthwise', depthwise_regularizer=weight_regularizer)(x)
     x = layers.BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'depthwise_BN')(x)
     x = layers.ReLU(6., name=prefix + 'depthwise_relu')(x)
 

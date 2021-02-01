@@ -70,7 +70,7 @@ class GenericModelBuilder:
     self.inputs = []
 
 
-  def maybe_change_framework(self, id, inputs):
+  def change_framework_if_necessary(self, id, inputs):
     """ When defining a custom model, this function should be called every time it can make sense to switch
     between tensorflow and upstride
 
@@ -116,17 +116,17 @@ class GenericModelBuilder:
 
   def build(self):
     inputs = tf.keras.layers.Input(shape=self.input_size)
-    x = self.maybe_change_framework("beginning", inputs)
+    x = self.change_framework_if_necessary("beginning", inputs)
     # output_tensors is the list of the vectors to use to compute classification losses (main output + auxilary losses)
     output_tensors = self.model(x)
     if type(output_tensors) != list:
       output_tensors = [output_tensors]
 
-    output_tensors = self.maybe_change_framework("end_before_dense", output_tensors)
+    output_tensors = self.change_framework_if_necessary("end_before_dense", output_tensors)
 
     for i, x in enumerate(output_tensors):
       output_tensors[i] = self.layers.Dense(self.num_classes, use_bias=True, name=f'Logits_{i}', kernel_regularizer=self.weight_regularizer)(x)
-    output_tensors = self.maybe_change_framework("end_after_dense", output_tensors)
+    output_tensors = self.change_framework_if_necessary("end_after_dense", output_tensors)
 
     for i, x in enumerate(output_tensors):
       output_tensors[i] = tf.keras.layers.Activation("softmax", dtype=tf.float32)(x)  # dtype float32 is important because of mixed precision
