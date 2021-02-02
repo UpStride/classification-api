@@ -82,7 +82,8 @@ arguments = [
     ]],
     ['namespace', 'Translate', [
         [float, "width_shift_range", 0.1, 'randomly shift images horizontally (fraction of total width)'],
-        [float, "height_shift_range", 0.1, 'randomly shift images vertically (fraction of total height)']
+        [float, "height_shift_range", 0.1, 'randomly shift images vertically (fraction of total height)'],
+        [str, "padding_strategy", "REFLECT", 'padding strategy to fill the missing pixels after translation']
     ]],
     ['namespace', 'Cutout', [
         [int, "length", 16, 'cutout length'],
@@ -540,10 +541,13 @@ class Translate:
   def __init__(self, config):
     self.width_shift_range = config['width_shift_range']
     self.height_shift_range = config['height_shift_range']
+    self.padding_strategy = config['padding_strategy'].upper()
+
     if not 0. <= self.width_shift_range <= 1.:
       raise ValueError(f"width_shift_range should be in range 0~1, but given {self.width_shift_range}")
     if not 0. <= self.height_shift_range <= 1.:
       raise ValueError(f"height_shift_range should be in range 0~1, but given {self.height_shift_range}")
+    assert self.padding_strategy in ["CONSTANT", "REFLECT", "SYMMETRIC"], f"{self.padding_strategy} is not valid padding strategy"
 
   def __call__(self, x):
     tensor_shape = tf.cast(tf.shape(x), tf.float32)
@@ -573,5 +577,5 @@ class Translate:
     x = tf.cond(tf.math.equal(pad_down, 0), lambda: x, lambda: x[pad_down:, :, :])
     x = tf.cond(tf.math.equal(pad_up, 0), lambda: x, lambda: x[:-pad_up, :, :])
 
-    x = tf.pad(x, [[pad_up, pad_down], [pad_left, pad_right], [0, 0]])
+    x = tf.pad(x, [[pad_up, pad_down], [pad_left, pad_right], [0,0]], self.padding_strategy)
     return x

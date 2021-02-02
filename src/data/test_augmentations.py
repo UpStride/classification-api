@@ -274,23 +274,35 @@ class TestAugmentations(unittest.TestCase):
       self.assertTrue((total_trial - num_of_times_rot_not_applied) > 0)
 
   def test_translate(self):
+    padding_stragies = ["CONSTANT", "REFLECT", "SYMMETRIC"] 
     width_shift_range = 0.1
     height_shift_range = 0.1
+    for strategy in padding_stragies:
+      config = {
+        'width_shift_range': width_shift_range,
+        'height_shift_range': height_shift_range,
+        'padding_strategy': strategy
+      }
+      output = augmentations.Translate(config)(self.image)
+      if tf.is_tensor(output):
+        output = output.numpy()
+      # output and input shape should be same
+      self.assertEqual(self.image.shape, output.shape)
+      # Count number of rows with zeros (which will be regarded as the number of pixel shifts either
+      row_counts = len(np.where(~output.any(axis=0))[0]) / 3.
+      col_counts = len(np.where(~output.any(axis=1))[0]) / 3.
+      # Check whether translation applied in the provided range
+      self.assertTrue(0 <= row_counts / self.image.shape[0] <= width_shift_range)
+      self.assertTrue(0 <= col_counts / self.image.shape[1] <= height_shift_range)
+
+    # negative test - invalid padding strategy
     config = {
       'width_shift_range': width_shift_range,
-      'height_shift_range': height_shift_range
+      'height_shift_range': height_shift_range,
+      'padding_strategy': 'test'
     }
-    output = augmentations.Translate(config)(self.image)
-    if tf.is_tensor(output):
-      output = output.numpy()
-    # output and input shape should be same
-    self.assertEqual(self.image.shape, output.shape)
-    # Count number of rows with zeros (which will be regarded as the number of pixel shifts either
-    row_counts = len(np.where(~output.any(axis=0))[0]) / 3.
-    col_counts = len(np.where(~output.any(axis=1))[0]) / 3.
-    # Check whether translation applied in the provided range
-    self.assertTrue(0 <= row_counts / self.image.shape[0] <= width_shift_range)
-    self.assertTrue(0 <= col_counts / self.image.shape[1] <= height_shift_range)
+    with self.assertRaises(AssertionError):
+      output = augmentations.Translate(config)(self.image)
 
   def test_cutout(self):
     config = {

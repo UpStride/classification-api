@@ -1,10 +1,16 @@
 """ 
-TODO : define testing procedure
+Testing Procedure: 
+1) Create a fake dataset and load the data using our dataloader and DCN dataloader. 
+   Finally compare the mean of the outputs which are expected to be same.
+2) Load the fake dataset, apply each augmentations separately and compare the mean between our dataloader versus DCN dataloader.
+3) Load the fake dataset(single image) over many iterations, compute the pixel mean for a specific portion of the image during these iterations 
+   and finally compare the mean of the output between our Dataloader and DCN Dataloader.
+4) Load a single valid image, apply the translate augmentation. Inspect the output image for ours and DCN dataloader.
 
 Known differences: 
 
 1) Our augmentation strategy works by taking mean by stacking each color channel whereas
-DCN takes each pixel wise mean
+DCN takes each pixel wise mean across the whole training batch.
 
 Algorithmically speaking, we do:
 Input: images, r_mean, g_mean, b_mean
@@ -22,10 +28,6 @@ Alg:
 
 note: their way of doing thing is unexpected so we will not implement it in classification-api
 but we will use there way here for testing purposes
-
-2) There is very small difference in the output between Keras Transate and our version.
-TODO : visual check
-
 """
 import unittest
 import tempfile
@@ -36,123 +38,101 @@ import numpy as np
 import cv2
 
 import tensorflow as tf 
+import tensorflow.keras.preprocessing.image as keras_preprocessing
 
 from scripts.tfrecord_writer import build_tfrecord_dataset
 from src.data.dataloader import get_dataset
 
+# global variable
+DIMENSIONS = (10, 224, 224, 3)
+BATCH_SIZE = 10
+
+def create_fake_dataset_and_convert_to_tfrecords(image_array, n_images_per_class=1):
+  dataset_dir = tempfile.mkdtemp()
+  os.makedirs(os.path.join(dataset_dir, 'cat'), exist_ok=True)
+
+  for i in range(n_images_per_class):
+    cv2.imwrite(os.path.join(dataset_dir, 'cat', '{}.jpg'.format(i)), image_array[i])
+
+  args = {'name': 'tfrecords', 'description': 'test', 'tfrecord_dir_path': dataset_dir,
+    'tfrecord_size': 1, 'preprocessing': 'NO', 'image_size': (DIMENSIONS[1:3]), "n_tfrecords":1,
+    'data': {'images_dir_path': dataset_dir,
+              'annotation_file_path': None,
+              'delimiter': ',',
+              'header_exists': False,
+              'split_names': ['train'],
+              'split_percentages': [1.0],
+          } 
+  }
+  # generate tfrecords 
+  build_tfrecord_dataset(args)
+  return dataset_dir
 class TestCompareDataLoader(unittest.TestCase):
   @classmethod
   def setUp(self):
-    self.image_ones = np.ones((20, 224, 224, 3), dtype=np.uint8) * 255 # TODO rename image_white
+    self.image_white = np.ones(DIMENSIONS, dtype=np.uint8) * 255 
+    # setting seed for numpy 
     np.random.seed(42)
-    self.image_random = np.random.uniform(low=0.0, high=255., size=(20, 224, 224, 3)) # TODO size should be a global const variable
+
+    self.batch_random_images = np.random.uniform(low=0.0, high=255., size=DIMENSIONS)
+    self.image_path = "ressources/testing/cat.jpeg"
 
   def get_dcn_dataloader(self, image_array):
-    # TODO add a link to the file
-    """DCN data loader from the DCN training file. takes input as a image array, normalizes the input and returns it
-    Note: some parts are commented as its not required for this specific tests. 
+    """
+    DCN dataloader has been taken from link below and certain variables which are not required for the comparison test are removed.
+    https://github.com/ChihebTrabelsi/deep_complex_networks/blob/master/scripts/training.py#L542
+
+
+    Function takes input as an image array, normalizes the input and returns it.
     Args:
         image_array (numpy array): image numpy ndarray. 
 
     Returns:
         [numpy array]: Normalized output
     """
-    # (X_train, y_train), (X_test, y_test) = tf.keras.datasets.cifar10.load_data()
-    # TODO remove y_train
-    (X_train, y_train) = image_array, np.ones((20, 2)) 
-    nb_classes                           = 2
-    n_train                              = 20
-    shuf_inds  = np.arange(len(y_train))
-    # np.random.seed(0xDEADBEEF)
-    np.random.shuffle(shuf_inds)
-    train_inds = shuf_inds[:n_train]
-    # val_inds   = shuf_inds[n_train:]
+    x_train    = image_array.astype('float32') / 255.0
+    pixel_mean = np.mean(x_train, axis=0)
 
-    X_train    = X_train.astype('float32')  /255.0
-    # X_test     = X_test .astype('float32')/255.0
-
-    X_train_split = X_train[train_inds]
-    # X_val_split   = X_train[val_inds  ]
-    y_train_split = y_train[train_inds]
-    # y_val_split   = y_train[val_inds  ]
-
-    pixel_mean = np.mean(X_train_split, axis=0)
-    # print(pixel_mean)
-
-    X_train    = X_train_split.astype(np.float32) - pixel_mean
-    # X_val      = X_val_split  .astype(np.float32) - pixel_mean
-    # X_test     = X_test       .astype(np.float32) - pixel_mean
-
-    # Y_train    = tf.keras.utils.to_categorical(y_train_split, nb_classes)
-    # Y_val      = tf.keras.utils.to_categorical(y_val_split,   nb_classes)
-    # Y_test     = tf.keras.utils.to_categorical(y_test,        nb_classes)
-
-    return X_train # Y_train, X_val, Y_val
-
-  # TODO move this function out of this class
-  def create_fake_dataset_and_convert_to_tfrecords(self, image_array, n_images_per_class=2):
-    dataset_dir = tempfile.mkdtemp()
-    os.makedirs(os.path.join(dataset_dir, 'cat'), exist_ok=True)
-    os.makedirs(os.path.join(dataset_dir, 'dog'), exist_ok=True)
-    for i in range(n_images_per_class):
-      cv2.imwrite(os.path.join(dataset_dir, 'dog', '{}.jpg'.format(i)), image_array[i])
-      cv2.imwrite(os.path.join(dataset_dir, 'cat', '{}.jpg'.format(i)), image_array[i+1])
+    x_train    = x_train.astype(np.float32) - pixel_mean
     
-    args = {'name': 'tfrecords', 'description': 'test', 'tfrecord_dir_path': dataset_dir,
-      'tfrecord_size': 1, 'preprocessing': 'NO', 'image_size': (224, 224), "n_tfrecords":1,
-      'data': {'images_dir_path': dataset_dir,
-                'annotation_file_path': None,
-                'delimiter': ',',
-                'header_exists': False,
-                'split_names': ['train'],
-                'split_percentages': [1.0],
-                }
-    }
-    # generate tfrecords 
-    build_tfrecord_dataset(args)
-    return dataset_dir
+    return x_train 
 
   def test_compare_without_augmentations(self):
     # create fake dataset and convert TFrecords
-    dataset_dir = self.create_fake_dataset_and_convert_to_tfrecords(image_array=self.image_ones, n_images_per_class=10)
+    dataset_dir = create_fake_dataset_and_convert_to_tfrecords(image_array=self.image_white, n_images_per_class=10)
 
     config = {
       'name': 'tfrecords',
       'data_dir': dataset_dir,
-      'batch_size': 20,
+      'batch_size': BATCH_SIZE,
       'train_split_id': 'train',
     }
     
     # get data from tfrecord
-    dataset = get_dataset(config, [], 2, 'train')
-    for image, _  in dataset:
-      # Normalize the image similar to DCN strategy
-      normalize = image / 255.
-      subtract_mean = tf.reduce_mean(normalize, axis=0)
-      X_train_from_our_dataloader = normalize - subtract_mean
+    dataset = get_dataset(config, [], 1, 'train')
 
-    # TODO remove print function or add more details
-    print(np.min(X_train_from_our_dataloader), np.max(X_train_from_our_dataloader))
-    X_train_from_dcn_dataloader = self.get_dcn_dataloader(self.image_ones)
-    print(np.min(X_train_from_dcn_dataloader), np.max(X_train_from_dcn_dataloader))
+    image, _ = next(iter(dataset))
+    # Normalize the image similar to DCN strategy
+    normalize = image / 255.
+    subtract_mean = tf.reduce_mean(normalize, axis=0)
+    x_train_from_our_dataloader = normalize - subtract_mean
 
-    # TODO X should be x
-    self.assertEqual(np.allclose(X_train_from_our_dataloader, X_train_from_dcn_dataloader), True)
+    x_train_from_dcn_dataloader = self.get_dcn_dataloader(self.image_white)
+
+    self.assertEqual(np.allclose(x_train_from_our_dataloader, x_train_from_dcn_dataloader), True)
 
     # clean up
     shutil.rmtree(dataset_dir)
 
   def test_compare_without_augmentations_random(self):
     # create fake dataset and convert TFrecords
-    dataset_dir = self.create_fake_dataset_and_convert_to_tfrecords(image_array=self.image_random, n_images_per_class=10)
+    dataset_dir = create_fake_dataset_and_convert_to_tfrecords(image_array=self.batch_random_images, n_images_per_class=10)
 
-    # TODO move this comment at the top of the file
-    # Our augmentation strategy works by taking mean by stacking each color channel whereas DCN takes each pixel wise mean 
-    # Not sure if this difference can cause changes to the final accuracy. 
+    # Code below tested with subtracting the mean for each color channels
+    # and there were differences between the output from our dataloader and DCN dataloader.
+    # For comparison purposes the mean is subtracted following DCN strategy. 
 
-    # TODO explain or remove
-    # explain : why you wrote this code, why you commented id and why you didn't remove it
-    # image_normalized = self.image_random / 255.
+    # image_normalized = self.batch_random_images,/ 255.
     # r = np.dstack([image_normalized[i][:, :, 0] for i in range(len(image_normalized))])
     # g = np.dstack([image_normalized[i][:, :, 1] for i in range(len(image_normalized))])
     # b = np.dstack([image_normalized[i][:, :, 2] for i in range(len(image_normalized))]) 
@@ -162,79 +142,158 @@ class TestCompareDataLoader(unittest.TestCase):
     config = {
       'name': 'tfrecords',
       'data_dir': dataset_dir,
-      'batch_size': 20,
+      'batch_size': BATCH_SIZE,
       'train_split_id': 'train',
     }
     
     # get data from tfrecord
-    dataset = get_dataset(config, [], 2, 'train')
-    for image, _  in dataset: # TODO dataset.__next__()
-      # Normalize the image similar to DCN strategy
-      normalize = image / 255.
-      subtract_mean = tf.reduce_mean(normalize, axis=0)
-      X_train_from_our_dataloader = normalize - subtract_mean
+    dataset = get_dataset(config, [], 1, 'train')
+
+    image, _ = next(iter(dataset))
+    # Normalize the image similar to DCN strategy
+    normalize = image / 255.
+    subtract_mean = tf.reduce_mean(normalize, axis=0)
+    x_train_from_our_dataloader = normalize - subtract_mean
 
     # get x_train from dcn 
-    X_train_from_dcn_dataloader = self.get_dcn_dataloader(self.image_random)
+    x_train_from_dcn_dataloader = self.get_dcn_dataloader(self.batch_random_images)
 
-    self.assertAlmostEqual(np.mean(X_train_from_our_dataloader), np.mean(X_train_from_dcn_dataloader), places=5)
+    self.assertAlmostEqual(np.mean(x_train_from_our_dataloader), np.mean(x_train_from_dcn_dataloader), places=5)
 
     # clean up
     shutil.rmtree(dataset_dir)
 
-  # TODO update name
-  def test_compare_with_translate_random(self):
+  def test_compare_with_augmentation_translate(self):
     # create fake dataset
-    dataset_dir = self.create_fake_dataset_and_convert_to_tfrecords(image_array=self.image_random, n_images_per_class=10)
-
-    # TODO should be removed
-    image_normalized = self.image_random / 255.
-    r = np.dstack([image_normalized[i][:, :, 0] for i in range(len(image_normalized))])
-    g = np.dstack([image_normalized[i][:, :, 1] for i in range(len(image_normalized))])
-    b = np.dstack([image_normalized[i][:, :, 2] for i in range(len(image_normalized))]) 
-    mean_data = [np.mean(r), np.mean(g), np.mean(b)]
-    print(mean_data)
+    dataset_dir = create_fake_dataset_and_convert_to_tfrecords(image_array=self.batch_random_images, n_images_per_class=10)
 
     config = {
       'name': 'tfrecords',
       'data_dir': dataset_dir,
-      'batch_size': 20,
+      'batch_size': BATCH_SIZE,
       'train_split_id': 'train',
       'Translate': {
       'width_shift_range': 0.125,
-      'height_shift_range': 0.125
+      'height_shift_range': 0.125,
+      'padding_strategy': 'REFLECT'
       }
     }
     
-    dataset = get_dataset(config, ['Translate', 'RandomHorizontalFlip'], 2, 'train')
-    # TODO same issue for loop
-    for image, _  in dataset:
-      # Normalize the image similar to DCN strategy
-      normalize = image / 255.
-      subtract_mean = tf.reduce_mean(normalize, axis=0)
-      X_train_from_our_dataloader = normalize - subtract_mean
+    dataset = get_dataset(config, ['Translate'], 1, 'train')
+
+    image, _ = next(iter(dataset))
+    # Normalize the image similar to DCN strategy
+    normalize = image / 255.
+    subtract_mean = tf.reduce_mean(normalize, axis=0)
+    x_train_from_our_dataloader = normalize - subtract_mean
 
     # get x_train from dcn 
-    x_data = self.get_dcn_dataloader(self.image_random)
+    x_data = self.get_dcn_dataloader(self.batch_random_images)
 
     # DCN augmentation strategy
-    dcn_augmentations = tf.keras.preprocessing.image.ImageDataGenerator(
-                                                                    height_shift_range=config['Translate']['height_shift_range'],
-                                                                    width_shift_range=config['Translate']['width_shift_range'],
-                                                                    horizontal_flip=True
-                                                                    )
+    dcn_augmentations = keras_preprocessing.ImageDataGenerator(height_shift_range=config['Translate']['height_shift_range'],
+                                                               width_shift_range=config['Translate']['width_shift_range'],
+                                                               horizontal_flip=True)
 
-    for image in dcn_augmentations.flow(x_data, None, batch_size=20, shuffle=False):
-      X_train_from_dcn_dataloader = image
-      break
+    x_train_from_dcn_dataloader = next(iter(dcn_augmentations.flow(x_data, None, batch_size=BATCH_SIZE, shuffle=False)))
     
     # Test the tensor shape remains the same
-    self.assertTrue(X_train_from_dcn_dataloader.shape, X_train_from_dcn_dataloader.shape)
-    print(np.mean(X_train_from_our_dataloader), np.mean(X_train_from_dcn_dataloader))
+    self.assertTrue(x_train_from_dcn_dataloader.shape, x_train_from_dcn_dataloader.shape)
 
-    self.assertAlmostEqual(np.mean(X_train_from_our_dataloader), np.mean(X_train_from_dcn_dataloader), places=3)
+    self.assertAlmostEqual(np.mean(x_train_from_our_dataloader), np.mean(x_train_from_dcn_dataloader), places=3)
 
     # clean up
     shutil.rmtree(dataset_dir)
 
-# TODO one more test : do the data augmentation 1000 fimes, compare the mean of one pixel
+  def test_compare_with_augmentation_randomflip(self):
+    # create fake dataset
+    dataset_dir = create_fake_dataset_and_convert_to_tfrecords(image_array=self.batch_random_images, n_images_per_class=10)
+
+    config = {
+      'name': 'tfrecords',
+      'data_dir': dataset_dir,
+      'batch_size': BATCH_SIZE,
+      'train_split_id': 'train',
+    }
+
+    while True: 
+      dataset = get_dataset(config, ['RandomHorizontalFlip'], 1, 'train')
+
+      image, _ = next(iter(dataset))
+      # Normalize the image similar to DCN strategy
+      normalize = image / 255.
+      subtract_mean = tf.reduce_mean(normalize, axis=0)
+      x_train_from_our_dataloader = normalize - subtract_mean
+      if np.any(x_train_from_our_dataloader) == np.any(self.batch_random_images):
+        break
+
+    # get x_train from dcn 
+    x_data = self.get_dcn_dataloader(self.batch_random_images)
+
+    # DCN augmentation strategy
+    while True:
+      dcn_augmentations = keras_preprocessing.ImageDataGenerator(horizontal_flip=True)
+      x_train_from_dcn_dataloader = next(iter(dcn_augmentations.flow(x_data, None, batch_size=BATCH_SIZE, shuffle=False)))
+      if np.any(x_train_from_dcn_dataloader) == np.any(self.batch_random_images):
+        break
+    
+    # Test the tensor shape remains the same
+    self.assertTrue(x_train_from_dcn_dataloader.shape, x_train_from_dcn_dataloader.shape)
+
+    self.assertAlmostEqual(np.mean(x_train_from_our_dataloader), np.mean(x_train_from_dcn_dataloader), places=7)
+
+    # clean up
+    shutil.rmtree(dataset_dir)
+
+  def test_data_visualization(self):
+    dataset_dir = tempfile.mkdtemp()
+    os.makedirs(os.path.join(dataset_dir, 'cat'), exist_ok=True)
+    shutil.copyfile(os.path.join(self.image_path), os.path.join(dataset_dir, 'cat', 'cat.jpeg'))
+
+    image = keras_preprocessing.load_img(
+    os.path.join(self.image_path), grayscale=False, color_mode='rgb', target_size=None,
+    interpolation='nearest')
+    image_array = keras_preprocessing.img_to_array(image)
+
+    args = {'name': 'tfrecords', 'description': 'test', 'tfrecord_dir_path': dataset_dir,
+      'tfrecord_size': 1, 'preprocessing': 'NO', 'image_size': DIMENSIONS[1:3], "n_tfrecords":1,
+      'data': {'images_dir_path': dataset_dir,
+                'annotation_file_path': None,
+                'delimiter': ',',
+                'header_exists': False,
+                'split_names': ['train'],
+                'split_percentages': [1.0],
+            } 
+    }
+    # generate tfrecords 
+    build_tfrecord_dataset(args)
+
+    config = {
+        'name': 'tfrecords',
+        'data_dir': dataset_dir,
+        'batch_size': 1,
+        'train_split_id': 'train',
+        'Translate': {
+        'width_shift_range': 0.125,
+        'height_shift_range': 0.125,
+        'padding_strategy': 'reflect'
+        }
+    }
+
+    dataset = get_dataset(config, ['Translate'], 1, 'train')
+    image, _ = next(iter(dataset)) # get the image
+    image = keras_preprocessing.array_to_img(image[0]) # get the image excluding the batch dimension and save
+    keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_ours.jpeg'), image)
+
+    dcn_augmentations = keras_preprocessing.ImageDataGenerator(height_shift_range=config['Translate']['height_shift_range'],
+                                                               width_shift_range=config['Translate']['width_shift_range'],
+                                                               horizontal_flip=True)
+
+    image_array = np.array(image_array[np.newaxis, ...])  # adding batch dimension for ImageDataLoader
+    image = next(iter(dcn_augmentations.flow(image_array, None, batch_size=1, shuffle=False)))
+
+    # save image excluding batch size
+    keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_DCN.jpeg'), image[0]) 
+
+    # remove the below line in order to perform the visual inspection
+    shutil.rmtree(dataset_dir)

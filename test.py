@@ -14,9 +14,11 @@ from src.models.test_pdart import *
 # from src.test_metrics import TestMetrics, TestCountFlops
 
 sys.path.append('scripts')
+sys.path.append('tests')
+sys.path.append('ressources')
 
 from scripts.test_tfrecord_writer import TestTfrecordWriter
-from scripts.test_compare_dataloader import TestCompareDataLoader
+from tests.unit_tests.test_compare_dataloader import TestCompareDataLoader
 
 
 if __name__ == "__main__":
