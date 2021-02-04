@@ -35,7 +35,6 @@ import os
 import shutil
 
 import numpy as np
-import cv2
 
 import tensorflow as tf 
 import tensorflow.keras.preprocessing.image as keras_preprocessing
@@ -52,10 +51,10 @@ def create_fake_dataset_and_convert_to_tfrecords(image_array, n_images_per_class
   os.makedirs(os.path.join(dataset_dir, 'cat'), exist_ok=True)
 
   for i in range(n_images_per_class):
-    cv2.imwrite(os.path.join(dataset_dir, 'cat', '{}.jpg'.format(i)), image_array[i])
+    keras_preprocessing.save_img(os.path.join(dataset_dir, 'cat', '{}.jpeg'.format(i)), image_array[i], scale=False)
 
   args = {'name': 'tfrecords', 'description': 'test', 'tfrecord_dir_path': dataset_dir,
-    'tfrecord_size': 1, 'preprocessing': 'NO', 'image_size': (DIMENSIONS[1:3]), "n_tfrecords":1,
+    'tfrecord_size': 1, 'preprocessing': 'NO', 'image_size': DIMENSIONS[1:3], "n_tfrecords":1,
     'data': {'images_dir_path': dataset_dir,
               'annotation_file_path': None,
               'delimiter': ',',
@@ -75,7 +74,9 @@ class TestCompareDataLoader(unittest.TestCase):
     np.random.seed(42)
 
     self.batch_random_images = np.random.uniform(low=0.0, high=255., size=DIMENSIONS)
-    self.image_path = "ressources/testing/cat.jpeg"
+    self.single_random_image = np.random.uniform(low=0, high=255, size=(1, 224, 224, 3)).astype(np.uint8)
+    self.image_path = "ressources/testing/cat.png"
+    self.black_white_image = "ressources/testing/black_and_white.jpeg"
 
   def get_dcn_dataloader(self, image_array):
     """
@@ -119,6 +120,7 @@ class TestCompareDataLoader(unittest.TestCase):
 
     x_train_from_dcn_dataloader = self.get_dcn_dataloader(self.image_white)
 
+    # compare output between our Dataloader and DCN dataloader
     self.assertEqual(np.allclose(x_train_from_our_dataloader, x_train_from_dcn_dataloader), True)
 
     # clean up
@@ -193,13 +195,16 @@ class TestCompareDataLoader(unittest.TestCase):
     # DCN augmentation strategy
     dcn_augmentations = keras_preprocessing.ImageDataGenerator(height_shift_range=config['Translate']['height_shift_range'],
                                                                width_shift_range=config['Translate']['width_shift_range'],
-                                                               horizontal_flip=True)
+                                                               horizontal_flip=False)
 
     x_train_from_dcn_dataloader = next(iter(dcn_augmentations.flow(x_data, None, batch_size=BATCH_SIZE, shuffle=False)))
     
     # Test the tensor shape remains the same
     self.assertTrue(x_train_from_dcn_dataloader.shape, x_train_from_dcn_dataloader.shape)
 
+    # Note for translate we expect the mean to be different as the method to fill the missing pixels that keras and our data loader use are different. 
+    # This doesn't cause an issue with the image being translated (see test_data_visualize), rather difference in pixel values at the shifted places.
+    # data visualization does confirm the translation works as expected.
     self.assertAlmostEqual(np.mean(x_train_from_our_dataloader), np.mean(x_train_from_dcn_dataloader), places=3)
 
     # clean up
@@ -207,39 +212,58 @@ class TestCompareDataLoader(unittest.TestCase):
 
   def test_compare_with_augmentation_randomflip(self):
     # create fake dataset
-    dataset_dir = create_fake_dataset_and_convert_to_tfrecords(image_array=self.batch_random_images, n_images_per_class=10)
+    # dataset_dir = create_fake_dataset_and_convert_to_tfrecords(image_array=self.black_white_image, n_images_per_class=1)
+    dataset_dir = tempfile.mkdtemp()
+    os.makedirs(os.path.join(dataset_dir, 'black_white'), exist_ok=True)
+    shutil.copyfile(os.path.join(self.black_white_image), os.path.join(dataset_dir, 'black_white', 'black_and_white.jpeg'))
+
+    image = keras_preprocessing.load_img(self.black_white_image, grayscale=False, color_mode='rgb', target_size=None,
+      interpolation='nearest')
+    image_array = keras_preprocessing.img_to_array(image)
+    image_array = image_array[np.newaxis, ...]  # adding batch dimension for ImageDataLoader
+
+    args = {'name': 'tfrecords', 'description': 'test', 'tfrecord_dir_path': dataset_dir,
+      'tfrecord_size': 1, 'preprocessing': 'NO', 'image_size': DIMENSIONS[1:3], "n_tfrecords":1,
+      'data': {'images_dir_path': dataset_dir,
+                'annotation_file_path': None,
+                'delimiter': ',',
+                'header_exists': False,
+                'split_names': ['train'],
+                'split_percentages': [1.0],
+            } 
+    }
+    # generate tfrecords 
+    build_tfrecord_dataset(args)
 
     config = {
       'name': 'tfrecords',
       'data_dir': dataset_dir,
-      'batch_size': BATCH_SIZE,
+      'batch_size': 1,
       'train_split_id': 'train',
     }
 
+    # loop through until the RandomHorizontalFlip is applied
     while True: 
       dataset = get_dataset(config, ['RandomHorizontalFlip'], 1, 'train')
-
-      image, _ = next(iter(dataset))
-      # Normalize the image similar to DCN strategy
-      normalize = image / 255.
-      subtract_mean = tf.reduce_mean(normalize, axis=0)
-      x_train_from_our_dataloader = normalize - subtract_mean
-      if np.any(x_train_from_our_dataloader) == np.any(self.batch_random_images):
+      x_train_from_our_dataloader, _ = next(iter(dataset))
+      if not np.allclose(x_train_from_our_dataloader.numpy(), image_array):
         break
 
-    # get x_train from dcn 
-    x_data = self.get_dcn_dataloader(self.batch_random_images)
-
-    # DCN augmentation strategy
+    # loop through until the RandomHorizontalFlip is applied
     while True:
       dcn_augmentations = keras_preprocessing.ImageDataGenerator(horizontal_flip=True)
-      x_train_from_dcn_dataloader = next(iter(dcn_augmentations.flow(x_data, None, batch_size=BATCH_SIZE, shuffle=False)))
-      if np.any(x_train_from_dcn_dataloader) == np.any(self.batch_random_images):
+      x_train_from_dcn_dataloader = next(iter(dcn_augmentations.flow(image_array, None, batch_size=1, shuffle=False)))
+      if not np.allclose(x_train_from_dcn_dataloader, image_array):
         break
-    
-    # Test the tensor shape remains the same
-    self.assertTrue(x_train_from_dcn_dataloader.shape, x_train_from_dcn_dataloader.shape)
 
+    # Test the tensor shape remains the same
+    self.assertTrue(x_train_from_our_dataloader.shape, x_train_from_dcn_dataloader.shape)
+
+    # Note: The example used here is to test if the augmentation works using a black and white image. 
+    # This test would fail if an image with wide range of pixel values across the color channels are used. 
+    # This is a limitation due to the loss of data (encode to bytes and decode back to image) for JPEG format.
+    # In the TFrecord writer we use opencv and decode using tensorflow library. The encoded bytes using openCV and tensorflow are not identical. 
+    # There is a slight pixel difference which is not noticible to the human eyes. 
     self.assertAlmostEqual(np.mean(x_train_from_our_dataloader), np.mean(x_train_from_dcn_dataloader), places=7)
 
     # clean up
@@ -250,10 +274,10 @@ class TestCompareDataLoader(unittest.TestCase):
     os.makedirs(os.path.join(dataset_dir, 'cat'), exist_ok=True)
     shutil.copyfile(os.path.join(self.image_path), os.path.join(dataset_dir, 'cat', 'cat.jpeg'))
 
-    image = keras_preprocessing.load_img(
-    os.path.join(self.image_path), grayscale=False, color_mode='rgb', target_size=None,
-    interpolation='nearest')
+    image = keras_preprocessing.load_img(self.image_path, grayscale=False, color_mode='rgb', target_size=None,
+      interpolation='nearest')
     image_array = keras_preprocessing.img_to_array(image)
+    image_array = image_array[np.newaxis, ...]  # adding batch dimension for ImageDataLoader
 
     args = {'name': 'tfrecords', 'description': 'test', 'tfrecord_dir_path': dataset_dir,
       'tfrecord_size': 1, 'preprocessing': 'NO', 'image_size': DIMENSIONS[1:3], "n_tfrecords":1,
@@ -280,20 +304,28 @@ class TestCompareDataLoader(unittest.TestCase):
         }
     }
 
-    dataset = get_dataset(config, ['Translate'], 1, 'train')
-    image, _ = next(iter(dataset)) # get the image
-    image = keras_preprocessing.array_to_img(image[0]) # get the image excluding the batch dimension and save
-    keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_ours.jpeg'), image)
+    # loop through until the RandomHorizontalFlip is applied.
+    while True:
+      dataset = get_dataset(config, ['Translate','RandomHorizontalFlip'], 1, 'train')
+      image, _ = next(iter(dataset)) # get the image
+      image_i = keras_preprocessing.array_to_img(image[0]) # get the image excluding the batch dimension and save
+      keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_ours.png'), image_i) # save the image
+      if not np.allclose(image, image_array):
+        break
 
-    dcn_augmentations = keras_preprocessing.ImageDataGenerator(height_shift_range=config['Translate']['height_shift_range'],
-                                                               width_shift_range=config['Translate']['width_shift_range'],
-                                                               horizontal_flip=True)
+    dcn_augmentations = keras_preprocessing.ImageDataGenerator(
+      height_shift_range=config['Translate']['height_shift_range'],
+      width_shift_range=config['Translate']['width_shift_range'], 
+      horizontal_flip=True)
 
-    image_array = np.array(image_array[np.newaxis, ...])  # adding batch dimension for ImageDataLoader
-    image = next(iter(dcn_augmentations.flow(image_array, None, batch_size=1, shuffle=False)))
+    # loop through until the RandomHorizontalFlip is applied.
+    while True:
+      image_dcn = next(iter(dcn_augmentations.flow(image_array, None, batch_size=1, shuffle=False)))
 
-    # save image excluding batch size
-    keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_DCN.jpeg'), image[0]) 
+      # save image excluding batch size
+      keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_DCN.png'), image[0]) 
+      if not np.allclose(image_dcn, image_array):
+        break
 
     # remove the below line in order to perform the visual inspection
     shutil.rmtree(dataset_dir)
