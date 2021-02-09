@@ -116,6 +116,7 @@ class GenericModelBuilder:
 
   def build(self):
     inputs = tf.keras.layers.Input(shape=self.input_size)
+    self.inputs.append(inputs)
     x = self.change_framework_if_necessary("beginning", inputs)
     # output_tensors is the list of the vectors to use to compute classification losses (main output + auxilary losses)
     output_tensors = self.model(x)
@@ -123,7 +124,6 @@ class GenericModelBuilder:
       output_tensors = [output_tensors]
 
     output_tensors = self.change_framework_if_necessary("end_before_dense", output_tensors)
-
     for i, x in enumerate(output_tensors):
       output_tensors[i] = self.layers.Dense(self.num_classes, use_bias=True, name=f'Logits_{i}', kernel_regularizer=self.weight_regularizer)(x)
     output_tensors = self.change_framework_if_necessary("end_after_dense", output_tensors)
@@ -131,6 +131,6 @@ class GenericModelBuilder:
     for i, x in enumerate(output_tensors):
       output_tensors[i] = tf.keras.layers.Activation("softmax", dtype=tf.float32)(x)  # dtype float32 is important because of mixed precision
 
-    model = self.model_class([inputs], output_tensors)
+    model = self.model_class(self.inputs, output_tensors)
 
     return model

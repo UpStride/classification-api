@@ -387,13 +387,13 @@ class PdartsImageNet(GenericModelBuilder):
 
 
 class PdartsCIFAR(GenericModelBuilder):
-  def __init__(self, args, **kwargs):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
     # define_drop_path_prob(kwargs['args']['drop_path_prob'])
     self.c = 36  # number of channels at the beginning of the network
     self.genotype = eval("PDARTS")
     self.n_layers = 20
     self._auxiliary = True
-    super().__init__(args, **kwargs)
 
   def model(self, x):
     # config 
@@ -426,7 +426,7 @@ class PdartsCIFAR(GenericModelBuilder):
         self.logits_aux = self.auxiliary_head(self.layers, s1)
 
     x = self.layers.GlobalAveragePooling2D()(s1)
-    return x, self.logits_aux
+    return [x, self.logits_aux]
 
   def auxiliary_head(self, layers, input_tensor):
     """assuming input size 14x14"""

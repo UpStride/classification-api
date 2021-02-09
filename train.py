@@ -40,8 +40,6 @@ arguments = [
 
 
 def get_compiled_model(config):
-  # for architecture search
-  load_arch = config['load_searched_arch'] if config['load_searched_arch'] else None
 
   # Parameters usefull for all the models
   kwargs = {
@@ -52,10 +50,14 @@ def get_compiled_model(config):
     'upstride_type': config['model']['upstride_type'],
     'tf2upstride_strategy': config['model']['conversion_params']['tf2up_strategy'],
     'upstride2tf_strategy': config['model']['conversion_params']['up2tf_strategy'],
-    'weight_decay': config['optimizer']['weight_decay']
+    'weight_decay': config['optimizer']['weight_decay'],
   }
 
-  model = model_name_to_class[config['model']['name']](**kwargs, load_searched_arch=load_arch).build()
+  # for architecture search
+  if config['load_searched_arch']:
+    kwargs['load_searched_arch'] = config['load_searched_arch']
+
+  model = model_name_to_class[config['model']['name']](**kwargs).build()
   model.summary()
   optimizer = get_optimizer(config['optimizer'])
   model.compile(optimizer=optimizer, loss='categorical_crossentropy',
