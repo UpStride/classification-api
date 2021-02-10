@@ -27,16 +27,16 @@ PDARTS = Genotype(normal=[('skip_connect', 0),
                   reduce_concat=range(2, 6))
 
 OPS = {
-    'none': lambda layers, C, strides, trainable: Zero(strides),
-    'avg_pool_3x3': lambda layers, C, strides, trainable: AvgPool(layers, strides),
-    'max_pool_3x3': lambda layers, C, strides, trainable: MaxPool(layers, strides),
-    'skip_connect': lambda layers, C, strides, trainable: Identity() if strides == 1 else FactorizedReduce(layers, C, trainable=trainable),
-    'sep_conv_3x3': lambda layers, C, strides, trainable: SepConv(layers, C, C, 3, strides, 1, trainable=trainable),
-    'sep_conv_5x5': lambda layers, C, strides, trainable: SepConv(layers, C, C, 5, strides, 2, trainable=trainable),
-    'sep_conv_7x7': lambda layers, C, strides, trainable: SepConv(layers, C, C, 7, strides, 3, trainable=trainable),
-    'dil_conv_3x3': lambda layers, C, strides, trainable: DilConv(layers, C, 3, strides, 2, 2, trainable=trainable),
-    'dil_conv_5x5': lambda layers, C, strides, trainable: DilConv(layers, C, 5, strides, 4, 2, trainable=trainable),
-    'conv_7x1_1x7': lambda layers, C, strides, trainable: Conv_7x1_1x7(layers, C, strides, trainable),
+    'none': lambda layers, C, strides, layers_conf, trainable: Zero(strides),
+    'avg_pool_3x3': lambda layers, C, strides, layers_conf, trainable: AvgPool(layers, strides),
+    'max_pool_3x3': lambda layers, C, strides, layers_conf, trainable: MaxPool(layers, strides),
+    'skip_connect': lambda layers, C, strides, layers_conf, trainable: Identity() if strides == 1 else FactorizedReduce(layers, C, trainable=trainable),
+    'sep_conv_3x3': lambda layers, C, strides, layers_conf, trainable: SepConv(layers, C, C, 3, strides, 1, layers_conf, trainable=trainable),
+    'sep_conv_5x5': lambda layers, C, strides, layers_conf, trainable: SepConv(layers, C, C, 5, strides, 2, layers_conf, trainable=trainable),
+    'sep_conv_7x7': lambda layers, C, strides, layers_conf, trainable: SepConv(layers, C, C, 7, strides, 3, layers_conf, trainable=trainable),
+    'dil_conv_3x3': lambda layers, C, strides, layers_conf, trainable: DilConv(layers, C, 3, strides, 2, 2, layers_conf, trainable=trainable),
+    'dil_conv_5x5': lambda layers, C, strides, layers_conf, trainable: DilConv(layers, C, 5, strides, 4, 2, layers_conf, trainable=trainable),
+    'conv_7x1_1x7': lambda layers, C, strides, layers_conf, trainable: Conv_7x1_1x7(layers, C, strides, layers_conf, trainable),
 }
 
 
@@ -119,7 +119,7 @@ class MaxPool(DataFormatHandler):
 
 
 class SepConv(DataFormatHandler):
-  def __init__(self, layers, C_in, C_out, kernel_size, strides, padding, trainable=True):
+  def __init__(self, layers, C_in, C_out, kernel_size, strides, padding, layers_conf, trainable=True):
     super().__init__()
     self.C_in = C_in
     self.C_out = C_out
@@ -130,13 +130,13 @@ class SepConv(DataFormatHandler):
 
     self.sub_model = tf.keras.Sequential([
         layers.ReLU(),
-        layers.DepthwiseConv2D(kernel_size=kernel_size, strides=strides, padding='SAME', depthwise_initializer='he_uniform', use_bias=False, depthwise_regularizer=weight_regularizer),
-        layers.Conv2D(C_in, kernel_size=1, padding='SAME', kernel_initializer='he_uniform', use_bias=False, kernel_regularizer=weight_regularizer),
-        layers.BatchNormalization(axis=self.axis, trainable=trainable),
+        layers.DepthwiseConv2D(kernel_size=kernel_size, strides=strides, padding='SAME', **layers_conf['depthwise']),
+        layers.Conv2D(C_in, kernel_size=1, padding='SAME', **layers_conf['conv']),
+        layers.BatchNormalization(trainable=trainable, **layers_conf['bn']),
         layers.ReLU(),
-        layers.DepthwiseConv2D(kernel_size=kernel_size, strides=1, padding='SAME', depthwise_initializer='he_uniform', use_bias=False, depthwise_regularizer=weight_regularizer),
-        layers.Conv2D(C_out, kernel_size=1, padding='SAME', kernel_initializer='he_uniform', use_bias=False, kernel_regularizer=weight_regularizer),
-        layers.BatchNormalization(axis=self.axis, trainable=trainable)
+        layers.DepthwiseConv2D(kernel_size=kernel_size, strides=1, padding='SAME', **layers_conf['depthwise']),
+        layers.Conv2D(C_out, kernel_size=1, padding='SAME', **layers_conf['conv']),
+        layers.BatchNormalization(trainable=trainable, **layers_conf['bn'])
     ])
 
   def call(self, input_tensor, training=False):
@@ -144,13 +144,13 @@ class SepConv(DataFormatHandler):
 
 
 class Conv_7x1_1x7(DataFormatHandler):
-  def __init__(self, layers, C, strides, trainable):
+  def __init__(self, layers, C, strides, layers_conf, trainable):
     super().__init__()
     self.sub_model = tf.keras.Sequential([
         layers.ReLU(),
-        layers.Conv2D(C, (1, 7), strides=(1, strides), padding='SAME', kernel_initializer='he_uniform', use_bias=False, kernel_regularizer=weight_regularizer),
-        layers.Conv2D(C, (7, 1), strides=(strides, 1), padding='SAME', kernel_initializer='he_uniform', use_bias=False, kernel_regularizer=weight_regularizer),
-        layers.BatchNormalization(axis=self.axis, trainable=trainable)
+        layers.Conv2D(C, (1, 7), strides=(1, strides), padding='SAME', **layers_conf['conv']),
+        layers.Conv2D(C, (7, 1), strides=(strides, 1), padding='SAME', **layers_conf['conv']),
+        layers.BatchNormalization(trainable=trainable, **layers_conf['bn'])
     ])
 
   def call(self, input_tensor, training=False):
@@ -158,7 +158,7 @@ class Conv_7x1_1x7(DataFormatHandler):
 
 
 class DilConv(DataFormatHandler):
-  def __init__(self, layers, C_out, kernel_size, strides, padding, dilation, trainable=True):
+  def __init__(self, layers, C_out, kernel_size, strides, padding, dilation, layers_conf, trainable=True):
     super().__init__()
     self.C_out = C_out
     self.kernel_size = kernel_size
@@ -178,11 +178,11 @@ class DilConv(DataFormatHandler):
     self.relu = layers.ReLU()
     self.pad = tf.keras.layers.ZeroPadding2D(padding)
     if self.do_workaround:
-      self.dw_conv = layers.DepthwiseConv2D(kernel_size=kernel_size, strides=1, padding='VALID', dilation_rate=1, depthwise_initializer='he_uniform', use_bias=False, depthwise_regularizer=weight_regularizer)
+      self.dw_conv = layers.DepthwiseConv2D(kernel_size=kernel_size, strides=1, padding='VALID', dilation_rate=1, **layers_conf['depthwise'])
     else:
-      self.dw_conv = layers.DepthwiseConv2D(kernel_size=kernel_size, strides=strides, padding='VALID', dilation_rate=dilation, depthwise_initializer='he_uniform', use_bias=False, depthwise_regularizer=weight_regularizer)
-    self.conv = layers.Conv2D(C_out, kernel_size=1, padding='VALID', kernel_initializer='he_uniform', use_bias=False, kernel_regularizer=weight_regularizer)
-    self.bn = layers.BatchNormalization(axis=self.axis, trainable=trainable)
+      self.dw_conv = layers.DepthwiseConv2D(kernel_size=kernel_size, strides=strides, padding='VALID', dilation_rate=dilation, **layers_conf['depthwise'])
+    self.conv = layers.Conv2D(C_out, kernel_size=1, padding='VALID', **layers_conf['conv'])
+    self.bn = layers.BatchNormalization(trainable=trainable, **layers_conf['bn'])
 
   def call(self, x):
     x = self.relu(x)
@@ -196,13 +196,13 @@ class DilConv(DataFormatHandler):
 
 
 class FactorizedReduce(DataFormatHandler):
-  def __init__(self, layers, C_out, trainable=True):
+  def __init__(self, layers, C_out, layers_conf, trainable=True):
     super().__init__()
     assert C_out % 2 == 0
     self.relu = layers.ReLU()
-    self.conv_1 = layers.Conv2D(C_out // 2, 1, strides=2, padding='VALID', kernel_initializer='he_uniform', use_bias=False, kernel_regularizer=weight_regularizer)
-    self.conv_2 = layers.Conv2D(C_out // 2, 1, strides=2, padding='VALID', kernel_initializer='he_uniform', use_bias=False, kernel_regularizer=weight_regularizer)
-    self.bn = layers.BatchNormalization(axis=self.axis, trainable=trainable)
+    self.conv_1 = layers.Conv2D(C_out // 2, 1, strides=2, padding='VALID', **layers_conf['conv'])
+    self.conv_2 = layers.Conv2D(C_out // 2, 1, strides=2, padding='VALID', **layers_conf['conv'])
+    self.bn = layers.BatchNormalization(trainable=trainable, **layers_conf['bn'])
 
   def call(self, x):
     x = self.relu(x)
@@ -213,12 +213,26 @@ class FactorizedReduce(DataFormatHandler):
 
 
 class ReLUConvBN(DataFormatHandler):
-  def __init__(self, layers, C_out, kernel_size, strides, padding, trainable=True):
+  def __init__(self, layers, C_out, kernel_size, strides, padding, layers_conf, trainable=True):
+    """
+    PyTorch code:
+    self.op = nn.Sequential(
+        nn.ReLU(inplace=False),
+        nn.Conv2d(C_in, C_out, kernel_size, stride=stride, padding=padding, bias=False),
+        nn.BatchNorm2d(C_out, affine=affine)
+    )
+
+    The PyTorch code has parameters (kernel_size, strides, padding) always equal to (1, 1, 0)
+
+    We kept the same signature but the padding parameter is useless as we always work with padding='VALID'. 
+    If the user call this function with padding != 0 then raise an error
+
+    """
     super().__init__()
+    assert padding == 0, "padding need to be 0"
     self.relu = layers.ReLU()
-    self.pad = tf.keras.layers.ZeroPadding2D(padding)
-    self.conv2d = layers.Conv2D(C_out, kernel_size, strides=strides, padding='VALID', kernel_initializer='he_uniform', use_bias=False, kernel_regularizer=weight_regularizer)
-    self.bn = layers.BatchNormalization(axis=self.axis, trainable=trainable)
+    self.conv2d = layers.Conv2D(C_out, kernel_size, strides=strides, padding='VALID', **layers_conf['conv'])
+    self.bn = layers.BatchNormalization(trainable=trainable, **layers_conf['bn'])
 
   def call(self, x):
     x = self.relu(x)
@@ -228,17 +242,17 @@ class ReLUConvBN(DataFormatHandler):
 
 
 class Cell(DataFormatHandler):
-  def __init__(self, layers, genotype, C, reduction, reduction_prev):
+  def __init__(self, layers, genotype, C, reduction, reduction_prev, layers_conf):
     """
     Implementation note: 
     - The pytorch code has parameters C_prev_prev and C_prev. Here we don't need them as keras auto-infer
     input shape
     """
     super().__init__()
-    
+
     # function that preprocess s0 and s1
-    self.preprocess0 = FactorizedReduce(layers, C) if reduction_prev else ReLUConvBN(layers, C, 1, 1, 0)
-    self.preprocess1 = ReLUConvBN(layers, C, 1, 1, 0)
+    self.preprocess0 = FactorizedReduce(layers, C, layers_conf) if reduction_prev else ReLUConvBN(layers, C, 1, 1, 0, layers_conf)
+    self.preprocess1 = ReLUConvBN(layers, C, 1, 1, 0, layers_conf)
 
     # find the good cell definition
     if reduction:
@@ -247,7 +261,7 @@ class Cell(DataFormatHandler):
     else:
       op_names, indices = zip(*genotype.normal)
       concat = genotype.normal_concat
-    assert len(op_names) == len(indices) # Sanity check
+    assert len(op_names) == len(indices)  # Sanity check
     self._indices = indices
 
     self._steps = len(op_names) // 2
@@ -257,13 +271,13 @@ class Cell(DataFormatHandler):
     self._ops = []
     for name, index in zip(op_names, indices):
       strides = 2 if reduction and index < 2 else 1
-      op = OPS[name](layers, C, strides, True)
+      op = OPS[name](layers, C, strides, layers_conf, True)
       self._ops += [op]
 
     # define the 2 droppath function in case it's usefull
     # TODO : maybe define these fonction only if needed ?
-    self.drop_path_1 = DropPath()    
-    self.drop_path_2 = DropPath()   
+    self.drop_path_1 = DropPath()
+    self.drop_path_2 = DropPath()
 
   def call(self, input_layers, training=False):
     s0, s1, drop_path_prob = input_layers
@@ -322,7 +336,6 @@ class NetworkImageNet(DataFormatHandler):
         tf.keras.layers.Flatten(),
         layers.Dense(self.label_dim, kernel_initializer='he_uniform')
     ])
-
 
 
 class PdartsImageNet(GenericModelBuilder):
@@ -395,19 +408,43 @@ class PdartsCIFAR(GenericModelBuilder):
     self.n_layers = 20
     self._auxiliary = True
 
-  def model(self, x):
-    # config 
+    # specify that the compilation will not be done with tf.keras.Model but PDartsModel
     self.model_class = PDartsModel
 
-    # model build
+    # general configuration of some layers
+    self.bn_conf = {
+        'axis': -1,
+        'momentum': 0.1,
+        'epsilon': 1e-5,
+    }
+
+    self.conv_conf = {
+        'kernel_initializer': 'he_uniform',
+        'use_bias': False,
+        'kernel_regularizer': weight_regularizer
+    }
+
+    self.depthwise_conf = {
+        'depthwise_initializer': 'he_uniform',
+        'use_bias': False,
+        'depthwise_regularizer': weight_regularizer
+    }
+
+    self.layers_conf = {
+        'bn': self.bn_conf,
+        'conv': self.conv_conf,
+        'depthwise': self.depthwise_conf
+    }
+
+  def model(self, x):
     drop_path_prob = tf.keras.layers.Input([])
     self.inputs.append(drop_path_prob)
     # Stem
     self.axis = -1  # TODO correct for channel first
 
     layers = self.layers
-    x = layers.Conv2D(self.c * 3, kernel_size=3, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(x)
-    s0 = layers.BatchNormalization(axis=self.axis)(x)
+    x = self.layers.Conv2D(self.c * 3, kernel_size=3, padding='SAME', **self.conv_conf)(x)
+    s0 = layers.BatchNormalization(**self.bn_conf)(x)
     s1 = s0
 
     C_curr = self.c
@@ -419,7 +456,7 @@ class PdartsCIFAR(GenericModelBuilder):
         reduction = True
       else:
         reduction = False
-      s0, s1 = s1, Cell(self.layers, self.genotype, C_curr, reduction, reduction_prev)([s0, s1, drop_path_prob])
+      s0, s1 = s1, Cell(self.layers, self.genotype, C_curr, reduction, reduction_prev, self.layers_conf)([s0, s1, drop_path_prob])
 
       reduction_prev = reduction
       if i == 2 * self.n_layers // 3 and self._auxiliary:
@@ -432,11 +469,11 @@ class PdartsCIFAR(GenericModelBuilder):
     """assuming input size 14x14"""
     x = layers.ReLU()(input_tensor)
     x = layers.AveragePooling2D(5, strides=3, padding='valid')(x)
-    x = layers.Conv2D(128, 1, kernel_initializer='he_uniform', use_bias=False)(x)
-    x = layers.BatchNormalization(axis=self.axis)(x)
+    x = layers.Conv2D(128, 1, **self.conv_conf)(x)
+    x = layers.BatchNormalization(**self.bn_conf)(x)
     x = layers.ReLU()(x)
-    x = layers.Conv2D(768, 2, kernel_initializer='he_uniform', use_bias=False)(x)
-    x = layers.BatchNormalization(axis=self.axis)(x)
+    x = layers.Conv2D(768, 2, **self.conv_conf)(x)
+    x = layers.BatchNormalization(**self.bn_conf)(x)
     x = layers.ReLU()(x)
     x = layers.Flatten()(x)
     return x
@@ -454,13 +491,13 @@ class PDartsModel(tf.keras.Model):
 
     print(" ", self.drop_path_prob)
     with tf.GradientTape() as tape:
-        y_pred = self([x, self.drop_path_prob], training=True) 
-        loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+      y_pred = self([x, self.drop_path_prob], training=True)
+      loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
 
     trainable_vars = self.trainable_variables
     gradients = tape.gradient(loss, trainable_vars)
     self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-    
+
     self.compiled_metrics.update_state(y, y_pred)
     return {m.name: m.result() for m in self.metrics}
 
@@ -470,6 +507,6 @@ class PDartsModel(tf.keras.Model):
     x, y = data
 
     y_pred = self([x, 0.], training=False)
-    self.compiled_loss( y, y_pred, regularization_losses=self.losses)
+    self.compiled_loss(y, y_pred, regularization_losses=self.losses)
     self.compiled_metrics.update_state(y, y_pred)
     return {m.name: m.result() for m in self.metrics}

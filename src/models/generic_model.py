@@ -62,7 +62,7 @@ class GenericModelBuilder:
     self.weight_regularizer = tf.keras.regularizers.l2(l=weight_decay)
 
     # if the model use custom keras Model then overide this
-    # This is usefull for SAM method
+    # This is usefull for SAM method or P-Darts
     self.model_class = tf.keras.Model
 
     # if the model use other inputs than the image then it need to add these tensors in this list
