@@ -65,7 +65,6 @@ class ResNet(GenericModelBuilder):
     x = self.layers.BatchNormalization(axis=self.nb_axis, name='batch_norm_last')(x)
     x = self.layers.Activation('relu', name='relu_last')(x)
     x = self.layers.GlobalAveragePooling2D()(x)
-    x = self.layers.Dense(units=self.num_classes, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer, use_bias=True,  name='logit')(x)
     return x
 
   def resblock(self, x, channels, use_bias=True, downsample=False, block_name='resblock'):
