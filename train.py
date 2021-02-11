@@ -124,7 +124,7 @@ def train(config):
   callbacks = get_callbacks(config, log_dir)
 
   with ds_strategy.scope(): # checkpoints needs to be in the same scope.
-    model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir, args['max_checkpoints'], args['checkpoint_freq'])
+    model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir, config['max_checkpoints'], config['checkpoint_freq'])
 
   callbacks.append(model_checkpoint_cb)
   if config['server']['id'] != '':
