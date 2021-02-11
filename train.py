@@ -128,9 +128,8 @@ def train(config):
   if config['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(config['server']))
 
-  if config['model']['name'] == 'Pdart':
-    from src.models.pdart import callback_epoch
-    callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: callback_epoch(epoch, config['num_epochs'], config['drop_path_prob'])))
+  if 'Pdarts' in config['model']['name']:
+    callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: model.on_epoch_begin_callback(epoch, config['num_epochs'], config['model']['drop_path_prob'])))
 
   # 6 training
   model.fit(x=train_dataset,
