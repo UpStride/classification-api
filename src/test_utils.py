@@ -121,7 +121,7 @@ class TestUtils(unittest.TestCase):
     optimizer = tf.keras.optimizers.Adam(lr=0.001)
     model.compile(optimizer=optimizer, loss='categorical_crossentropy')
     ckpt_dir = tempfile.mkdtemp()
-    callback, latest_epoch = init_custom_checkpoint_callbacks(model, optimizer, ckpt_dir)
+    callback, latest_epoch = init_custom_checkpoint_callbacks(model, optimizer, ckpt_dir, max_ckpt=5)
     self.assertEqual(os.listdir(ckpt_dir), [])
     self.assertEqual(latest_epoch, 0)
 
@@ -178,7 +178,7 @@ class TestUtils(unittest.TestCase):
     model = Model1('tensorflow', factor=1).model
     optimizer = tf.keras.optimizers.Adam(lr=0.001)
     model.compile(optimizer=optimizer, loss='categorical_crossentropy')
-    callback, latest_epoch = init_custom_checkpoint_callbacks(model, optimizer, ckpt_dir)
+    callback, latest_epoch = init_custom_checkpoint_callbacks(model, optimizer, ckpt_dir, max_ckpt=5)
     self.assertEqual(latest_epoch, 6)
 
     shutil.rmtree(train_dir)
