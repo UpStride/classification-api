@@ -1,10 +1,8 @@
 import tensorflow as tf
 from .generic_model import GenericModelBuilder
-import tensorflow.keras as tfk
-from tensorflow.keras import activations, Sequential
+from tensorflow.keras import Sequential
 from collections import namedtuple
 
-weight_regularizer = tf.keras.regularizers.l2(l=0.0003)
 Genotype = namedtuple('Genotype', 'normal normal_concat reduce reduce_concat')
 
 PDARTS = Genotype(normal=[('skip_connect', 0),
@@ -412,9 +410,11 @@ class PdartsCIFAR(GenericModelBuilder):
     self.model_class = PDartsModel
 
     # general configuration of some layers
+    weight_regularizer = tf.keras.regularizers.l2(l=0.0003)
+
     self.bn_conf = {
         'axis': -1,
-        'momentum': 0.1,
+        'momentum': 0.9,
         'epsilon': 1e-5,
     }
 
@@ -460,10 +460,13 @@ class PdartsCIFAR(GenericModelBuilder):
 
       reduction_prev = reduction
       if i == 2 * self.n_layers // 3 and self._auxiliary:
-        self.logits_aux = self.auxiliary_head(self.layers, s1)
+        logits_aux = self.auxiliary_head(self.layers, s1)
 
     x = self.layers.GlobalAveragePooling2D()(s1)
-    return [x, self.logits_aux]
+    if self._auxiliary:
+      return [x, logits_aux]
+    else:
+      return x
 
   def auxiliary_head(self, layers, input_tensor):
     """assuming input size 14x14"""
@@ -489,7 +492,7 @@ class PDartsModel(tf.keras.Model):
     """
     x, y = data
 
-    print(" ", self.drop_path_prob)
+    print(" drop_path_prob: ", self.drop_path_prob)
     with tf.GradientTape() as tape:
       y_pred = self([x, self.drop_path_prob], training=True)
       loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
@@ -510,3 +513,8 @@ class PDartsModel(tf.keras.Model):
     self.compiled_loss(y, y_pred, regularization_losses=self.losses)
     self.compiled_metrics.update_state(y, y_pred)
     return {m.name: m.result() for m in self.metrics}
+
+  def on_epoch_begin_callback(self, current_epoch: int, max_epoch: int, max_drop_path_prob: float):
+    """ Callback to update drop_path_prob during the training
+    """
+    self.drop_path_prob = max_drop_path_prob * current_epoch / max_epoch
