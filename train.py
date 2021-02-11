@@ -87,7 +87,7 @@ def train(args):
   alchemy_api.send_model_info(model, args['server'])
   callbacks = get_callbacks(args, log_dir)
 
-  model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir, args['max_checkpoints'])
+  model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir, args['max_checkpoints'], args['checkpoint_freq'])
   callbacks.append(model_checkpoint_cb)
   if args['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(args['server']))

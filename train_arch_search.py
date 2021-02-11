@@ -154,7 +154,7 @@ def train(args):
   weights, arch_params = fbnetv2.split_trainable_weights(model)
   weight_opt = get_optimizer(args['optimizer'])
   arch_opt = get_optimizer(args['arch_search']['optimizer'])
-  model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir, args['max_checkpoints'])
+  model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir, args['max_checkpoints'] , args['checkpoint_freq'])
   callbacks = [
       model_checkpoint_cb
   ]
