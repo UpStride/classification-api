@@ -123,7 +123,9 @@ def train(config):
   alchemy_api.send_model_info(model, config['server'])
   callbacks = get_callbacks(config, log_dir)
 
-  model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir)
+  with ds_strategy.scope(): # checkpoints needs to be in the same scope.
+    model_checkpoint_cb, latest_epoch = init_custom_checkpoint_callbacks({'model': model}, checkpoint_dir, config['max_checkpoints'], config['checkpoint_freq'])
+
   callbacks.append(model_checkpoint_cb)
   if config['server']['id'] != '':
     callbacks.append(alchemy_api.send_metric_callbacks(config['server']))
