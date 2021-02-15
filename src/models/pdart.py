@@ -518,3 +518,47 @@ class PDartsModel(tf.keras.Model):
     """ Callback to update drop_path_prob during the training
     """
     self.drop_path_prob = max_drop_path_prob * current_epoch / max_epoch
+
+  def fit(self, x, validation_data, epochs, callbacks, initial_epoch):
+    """
+    Notes regarding mixed-precision
+    https://github.com/tensorflow/tensorflow/blob/v2.4.1/tensorflow/python/keras/engine/training.py#L551
+
+    in tf 2.4, it seems that user don't need to do anything special in the custom training loop anymore. 
+    Indeed, during compilation, if mixed-precision is enable, then the optimizer is wrapped in a lossScaleOptimizer
+    that take care of everything
+
+    """
+    # TODO have same output than Keras
+
+    callbacks = tf.keras.callbacks.CallbackList(callbacks, add_history=True, model=self)
+
+    # call all callbacks at the beginning of the training
+    callbacks.on_train_begin()
+
+    with self.distribute_strategy.scope():
+      for epoch in range(initial_epoch, epochs+1):
+        self.reset_metrics()
+        callbacks.on_epoch_begin(epoch)
+
+        # Training
+        print('\n\n\nTraining')
+        for step, training_point in enumerate(x):
+          callbacks.on_train_batch_begin(step)
+          # logs = self.train_step(training_point)
+          logs = self.distribute_strategy.run(self.train_step, args=(training_point,))
+
+          if self.stop_training:
+            break
+          print(logs)
+
+        # Validation
+        print('Validation')
+        for step, validation_point in enumerate(validation_data):
+          # logs = self.test_step(validation_point)
+          logs = self.distribute_strategy.run(self.test_step, args=(validation_point,))
+          print(logs)
+
+        callbacks.on_epoch_end(epoch)
+
+    callbacks.on_train_end()

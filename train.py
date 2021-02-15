@@ -138,7 +138,6 @@ def train(config):
             validation_data=val_dataset,
             epochs=config['num_epochs'],
             callbacks=callbacks,
-            max_queue_size=16,
             initial_epoch=latest_epoch
             )
 
