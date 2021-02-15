@@ -4,7 +4,8 @@ import tensorflow.keras.layers as tf_layers
 
 from .alexnet import AlexNet, AlexNetQ, AlexNetToy, AlexNetNCHW
 from .mobilenet import MobileNetV2, MobileNetV2NCHW, MobileNetV2Cifar10, MobileNetV2Cifar10_2, MobileNetV2Cifar10Hyper, MobileNetV2Cifar10NCHW
-from .mobilenet_v3 import MobileNetV3Large, MobileNetV3Small, MobileNetV3LargeCIFAR, MobileNetV3SmallCIFAR
+from .mobilenet_v3 import (MobileNetV3Large, MobileNetV3Small, MobileNetV3LargeCIFAR, MobileNetV3SmallCIFAR,
+                           MobileNetV3LargeNCHW, MobileNetV3SmallNCHW, MobileNetV3LargeCIFARNCHW, MobileNetV3SmallCIFARNCHW)
 
 from .resnet import (ResNet18, ResNet34, ResNet50, ResNet101, ResNet152,
                      ResNet20CIFAR, ResNet32CIFAR, ResNet44CIFAR, ResNet56CIFAR, ResNetHyper,

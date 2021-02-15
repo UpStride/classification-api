@@ -316,18 +316,18 @@ class MobileNetV3SmallNCHW(MobileNetV3Small):
 
 
 class MobileNetV3SmallCIFARNCHW(MobileNetV3SmallCIFAR):
-    def __init__(self, *args, **kwargs):
+  def __init__(self, *args, **kwargs):
     tf.keras.backend.set_image_data_format('channels_first')
     super().__init__(*args, **kwargs)
 
 
 class MobileNetV3LargeNCHW(MobileNetV3Large):
-    def __init__(self, *args, **kwargs):
+  def __init__(self, *args, **kwargs):
     tf.keras.backend.set_image_data_format('channels_first')
     super().__init__(*args, **kwargs)
 
 
 class MobileNetV3LargeCIFARNCHW(MobileNetV3LargeCIFAR):
-    def __init__(self, *args, **kwargs):
+  def __init__(self, *args, **kwargs):
     tf.keras.backend.set_image_data_format('channels_first')
     super().__init__(*args, **kwargs)
