@@ -247,12 +247,12 @@ class TestCompareDataLoader(unittest.TestCase):
     # loop through until the RandomHorizontalFlip is applied
     dataset = get_dataset(config, ['RandomHorizontalFlip'], 1, 'train')
     x_train_from_our_dataloader, _ = next(iter(dataset))
-    assert not np.allclose(x_train_from_our_dataloader.numpy(), image_array), f"Augmented Image and original image are the same"
+    self.assertFalse(np.allclose(x_train_from_our_dataloader, image_array), "Augmented Image and original image are the same")
 
     # loop through until the RandomHorizontalFlip is applied
     dcn_augmentations = keras_preprocessing.ImageDataGenerator(horizontal_flip=True)
     x_train_from_dcn_dataloader = next(iter(dcn_augmentations.flow(image_array, None, batch_size=1, shuffle=False)))
-    assert not np.allclose(x_train_from_dcn_dataloader, image_array), f"Augmented Image and original image are the same"
+    self.assertFalse(np.allclose(x_train_from_dcn_dataloader, image_array), "Augmented Image and original image are the same")
 
     # Test the tensor shape remains the same
     self.assertTrue(x_train_from_our_dataloader.shape, x_train_from_dcn_dataloader.shape)
@@ -307,7 +307,7 @@ class TestCompareDataLoader(unittest.TestCase):
     image, _ = next(iter(dataset)) # get the image
     image_i = keras_preprocessing.array_to_img(image[0]) # get the image excluding the batch dimension and save
     keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_ours.png'), image_i) # save the image
-    assert not np.allclose(image, image_array), f"Augmented Image and original image are the same"
+    self.assertFalse(np.allclose(image, image_array), "Augmented Image and original image are the same" )
 
     dcn_augmentations = keras_preprocessing.ImageDataGenerator(
       height_shift_range=config['Translate']['height_shift_range'],
@@ -317,7 +317,7 @@ class TestCompareDataLoader(unittest.TestCase):
     image_dcn = next(iter(dcn_augmentations.flow(image_array, None, batch_size=1, shuffle=False)))
     # save image excluding batch size
     keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_DCN.png'), image[0]) 
-    assert not np.allclose(image_dcn, image_array), f"Augmented Image and original image are the same"
+    self.assertFalse(np.allclose(image_dcn, image_array), "Augmented Image and original image are the same")
 
     # remove the below line in order to perform the visual inspection
     shutil.rmtree(dataset_dir)
