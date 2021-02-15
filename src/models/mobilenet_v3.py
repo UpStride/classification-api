@@ -5,14 +5,14 @@
   - [Searching for MobileNetV3](
       https://arxiv.org/pdf/1905.02244.pdf) (ICCV 2019)
 
-Code from 
-https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/keras/applications/mobilenet_v3.py 
+Code from
+https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/keras/applications/mobilenet_v3.py
 adapted to upstride
 
   The following table describes the performance of MobileNets:
   ------------------------------------------------------------------------
   MACs stands for Multiply Adds
-  
+
   |Classification Checkpoint|MACs(M)|Parameters(M)|Top1 Accuracy|Pixel1 CPU(ms)|
   |---|---|---|---|---|
   | mobilenet_v3_large_1.0_224              | 217 | 5.4 |   75.6   |   51.2  |
@@ -23,7 +23,7 @@ adapted to upstride
   | mobilenet_v3_small_minimalistic_1.0_224 | 65  | 2.0 |   61.9   |   12.2  |
 
 6.1.1    Training setup
-We train our models using synchronous training setup on4x4 TPU Pod [24] using standard tensorflow 
+We train our models using synchronous training setup on4x4 TPU Pod [24] using standard tensorflow
 RMSPropOp-timizer with 0.9 momentum. We use the initial learning rateof  0.1,
 with  batch  size  4096  (128  images  per  chip),  andlearning  rate  decay  rate  of  0.01
 every  3  epochs.   We  use dropout of 0.8, and l2 weight decay 1e-5 and the same image preprocessing as Inception [42].
@@ -46,7 +46,7 @@ def _make_divisible(v, divisor=8, min_value=None):
   return new_v
 
 
-def correct_pad(inputs, kernel_size, is_channel_fist):
+def correct_pad(inputs, kernel_size, is_channel_first):
   """Returns a tuple for zero-padding for 2D convolution with downsampling.
   Args:
       input_size: An integer or tuple/list of 2 integers.
@@ -56,7 +56,7 @@ def correct_pad(inputs, kernel_size, is_channel_fist):
   """
   if type(inputs) == list:
     inputs = inputs[0]
-  input_size = inputs.shape[2:4] if is_channel_fist else inputs.shape[1:3]
+  input_size = inputs.shape[2:4] if is_channel_first else inputs.shape[1:3]
   if isinstance(kernel_size, int):
     kernel_size = (kernel_size, kernel_size)
   adjust = (1, 1) if input_size[0] is None else (1 - input_size[0] % 2, 1 - input_size[1] % 2)
@@ -85,8 +85,8 @@ class _MobileNetV3(GenericModelBuilder):
     self.config = config
     self.last_point_ch = last_point_ch
     self.last_block_output_shape = 3
-    self.is_channel_fist = tf.keras.backend.image_data_format() == 'channels_first'
-    self.channel_axis = 1 if self.is_channel_fist else -1
+    self.is_channel_first = tf.keras.backend.image_data_format() == 'channels_first'
+    self.channel_axis = 1 if self.is_channel_first else -1
 
     self.conv_params = {
         'kernel_regularizer': KERNEL_REGULARIZER,
@@ -121,7 +121,7 @@ class _MobileNetV3(GenericModelBuilder):
       x = self.layers.BatchNormalization(name=prefix + 'expand/BatchNorm', **self.bn_params)(x)
       x = self.layers.Activation(activation_fn, name=prefix + '1a_' + activation_fn.__name__)(x)
     if stride == 2:
-      x = self.layers.ZeroPadding2D(padding=correct_pad(x, kernel_size, self.is_channel_fist), name=prefix + 'depthwise/pad')(x)
+      x = self.layers.ZeroPadding2D(padding=correct_pad(x, kernel_size, self.is_channel_first), name=prefix + 'depthwise/pad')(x)
     x = self.layers.DepthwiseConv2D(kernel_size, name=prefix + 'depthwise', **depthwise_params)(x)
     x = self.layers.BatchNormalization(name=prefix + 'depthwise/BatchNorm', **self.bn_params)(x)
     x = self.layers.Activation(activation_fn, name=prefix + activation_fn.__name__)(x)
@@ -307,3 +307,27 @@ class MobileNetV3LargeCIFAR(_MobileNetV3):
         (6,        160,     5,      1,      0.25,       hard_swish),
     ]
     super().__init__(1.0, 0, 1, config, 1280, *args, **kwargs)
+
+
+class MobileNetV3SmallNCHW(MobileNetV3Small):
+  def __init__(self, *args, **kwargs):
+    tf.keras.backend.set_image_data_format('channels_first')
+    super().__init__(*args, **kwargs)
+
+
+class MobileNetV3SmallCIFARNCHW(MobileNetV3SmallCIFAR):
+    def __init__(self, *args, **kwargs):
+    tf.keras.backend.set_image_data_format('channels_first')
+    super().__init__(*args, **kwargs)
+
+
+class MobileNetV3LargeNCHW(MobileNetV3Large):
+    def __init__(self, *args, **kwargs):
+    tf.keras.backend.set_image_data_format('channels_first')
+    super().__init__(*args, **kwargs)
+
+
+class MobileNetV3LargeCIFARNCHW(MobileNetV3LargeCIFAR):
+    def __init__(self, *args, **kwargs):
+    tf.keras.backend.set_image_data_format('channels_first')
+    super().__init__(*args, **kwargs)
