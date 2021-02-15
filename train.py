@@ -28,6 +28,7 @@ arguments = [
         # [int, 'n_layers_before_tf', 0, 'when using mix framework, number of layer defined using upstride', lambda x: x >= 0],
         [str, "name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
         [float, "drop_path_prob", 0.3, 'drop path probability'],
+        [float, "auxiliary_weight", 0.4, 'auxiliary weight loss decay to be applied on the auxiliary loss'],
         [int, "num_classes", 0, 'Number of classes', lambda x: x > 0],  # TODO this number should be computed from dataset
         ['namespace', 'conversion_params', [
             # [bool, 'output_layer_before_up2tf', False, 'Whether to use final output layer before UpStride2TF conversion or not'],
@@ -57,11 +58,15 @@ def get_compiled_model(config):
   if config['load_searched_arch']:
     kwargs['load_searched_arch'] = config['load_searched_arch']
 
+  # For PDARTS its [None, float] for others its None
+  loss_weights = [None, config['model']['auxiliary_weight']] if 'Pdarts' in config['model']['name'] else None
+
   model = model_name_to_class[config['model']['name']](**kwargs).build()
   model.summary()
   optimizer = get_optimizer(config['optimizer'])
   model.compile(optimizer=optimizer, loss='categorical_crossentropy',
-                metrics=['accuracy', 'top_k_categorical_accuracy'])
+                metrics=['accuracy', 'top_k_categorical_accuracy'], 
+                loss_weights=loss_weights) 
   # output the optimizer to save it in the checkpoint
   return model, optimizer
 
