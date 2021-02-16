@@ -146,10 +146,19 @@ class _MobileNetV3(GenericModelBuilder):
     x = layers.ReLU(name=prefix + 'squeeze_excite/Relu')(x)
     x = layers.Dense(filters, kernel_regularizer=KERNEL_REGULARIZER, name=prefix + 'squeeze_excite/Dense_1')(x)
     x = layers.Activation(hard_sigmoid, name=prefix + 'squeeze_excite/Hard_Sigmoid')(x)
+    if self.is_channel_first:
+      # if we are channel first, then
+      # inputs_seblock = (None, 96, 14, 14)
+      # x = (None, 96)
+      # we need to add 2 dimensions at the end of x so tf can perform the multiplication
+      x = tf.expand_dims(x, axis=-1)
+      x = tf.expand_dims(x, axis=-1)
     x = layers.Multiply(name=prefix + 'squeeze_excite/Mul')([inputs_seblock, x])
     return x
 
   def model(self, x):
+    if self.is_channel_first:
+      x = tf.transpose(x, [0, 3, 1, 2])
     x = self.layers.Conv2D(16 // self.factor, kernel_size=3, strides=self.first_conv_stride, name='Conv', **self.conv_params)(x)
     x = self.layers.BatchNormalization(name='Conv/BatchNorm', **self.bn_params)(x)
     x = self.layers.Activation(hard_swish, name='Conv/Hard_Swish')(x)
