@@ -193,19 +193,27 @@ class TestAugmentations(unittest.TestCase):
         output = augmentations.CentralCrop(config)(self.image)
 
   def test_random_horizontal_vertical_flip_rotate_90(self):
-    sum_pixels = np.sum(self.rand_image)
+    
+    # Seed 0 ensures the random seed first output from random_augmentations will be augmented.
+    tf.random.set_seed(0)
 
-    output = [
-        augmentations.RandomHorizontalFlip({})(self.rand_image),
-        augmentations.RandomVerticalFlip({})(self.rand_image),
-        augmentations.RandomRotate90({})(self.rand_image)
-    ]
+    # Test Random Horizontal Flip
+    output = augmentations.RandomHorizontalFlip({})(self.rand_image)
+    self.assertFalse(np.allclose(output.numpy(), self.rand_image))
+    self.assertEqual(output.shape, [224, 224, 3])
 
-    for i in output:
-      # check pixel are only shifted and not changed
-      self.assertEqual(np.sum(i), sum_pixels)
-      # check if the size remains the same
-      self.assertEqual(i.shape, [224, 224, 3])
+    # Test Random Veritical Flip
+    tf.random.set_seed(1)
+    output = augmentations.RandomVerticalFlip({})(self.rand_image)
+    self.assertFalse(np.allclose(output.numpy(), self.rand_image))
+    self.assertEqual(output.shape, [224, 224, 3])
+
+    # Test Random Rotate 90
+    tf.random.set_seed(1)
+    output = augmentations.RandomRotate90({})(self.rand_image)
+    self.assertFalse(np.allclose(output, self.rand_image))
+    self.assertEqual(output.shape, [224, 224, 3])
+    
 
   def test_colorjitter(self):
     # case 1 value is zero

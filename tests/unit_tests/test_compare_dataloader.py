@@ -72,6 +72,8 @@ class TestCompareDataLoader(unittest.TestCase):
     self.image_white = np.ones(DIMENSIONS, dtype=np.uint8) * 255 
     # setting seed for numpy 
     np.random.seed(42)
+    # setting seed for tensorflow 
+    tf.random.set_seed(0)
 
     self.batch_random_images = np.random.uniform(low=0.0, high=255., size=DIMENSIONS)
     self.single_random_image = np.random.uniform(low=0, high=255, size=(1, 224, 224, 3)).astype(np.uint8)
@@ -243,18 +245,14 @@ class TestCompareDataLoader(unittest.TestCase):
     }
 
     # loop through until the RandomHorizontalFlip is applied
-    while True: 
-      dataset = get_dataset(config, ['RandomHorizontalFlip'], 1, 'train')
-      x_train_from_our_dataloader, _ = next(iter(dataset))
-      if not np.allclose(x_train_from_our_dataloader.numpy(), image_array):
-        break
+    dataset = get_dataset(config, ['RandomHorizontalFlip'], 1, 'train')
+    x_train_from_our_dataloader, _ = next(iter(dataset))
+    self.assertFalse(np.allclose(x_train_from_our_dataloader, image_array), "Augmented Image and original image are the same")
 
     # loop through until the RandomHorizontalFlip is applied
-    while True:
-      dcn_augmentations = keras_preprocessing.ImageDataGenerator(horizontal_flip=True)
-      x_train_from_dcn_dataloader = next(iter(dcn_augmentations.flow(image_array, None, batch_size=1, shuffle=False)))
-      if not np.allclose(x_train_from_dcn_dataloader, image_array):
-        break
+    dcn_augmentations = keras_preprocessing.ImageDataGenerator(horizontal_flip=True)
+    x_train_from_dcn_dataloader = next(iter(dcn_augmentations.flow(image_array, None, batch_size=1, shuffle=False)))
+    self.assertFalse(np.allclose(x_train_from_dcn_dataloader, image_array), "Augmented Image and original image are the same")
 
     # Test the tensor shape remains the same
     self.assertTrue(x_train_from_our_dataloader.shape, x_train_from_dcn_dataloader.shape)
@@ -305,27 +303,21 @@ class TestCompareDataLoader(unittest.TestCase):
     }
 
     # loop through until the RandomHorizontalFlip is applied.
-    while True:
-      dataset = get_dataset(config, ['Translate','RandomHorizontalFlip'], 1, 'train')
-      image, _ = next(iter(dataset)) # get the image
-      image_i = keras_preprocessing.array_to_img(image[0]) # get the image excluding the batch dimension and save
-      keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_ours.png'), image_i) # save the image
-      if not np.allclose(image, image_array):
-        break
+    dataset = get_dataset(config, ['Translate','RandomHorizontalFlip'], 1, 'train')
+    image, _ = next(iter(dataset)) # get the image
+    image_i = keras_preprocessing.array_to_img(image[0]) # get the image excluding the batch dimension and save
+    keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_ours.png'), image_i) # save the image
+    self.assertFalse(np.allclose(image, image_array), "Augmented Image and original image are the same" )
 
     dcn_augmentations = keras_preprocessing.ImageDataGenerator(
       height_shift_range=config['Translate']['height_shift_range'],
       width_shift_range=config['Translate']['width_shift_range'], 
       horizontal_flip=True)
 
-    # loop through until the RandomHorizontalFlip is applied.
-    while True:
-      image_dcn = next(iter(dcn_augmentations.flow(image_array, None, batch_size=1, shuffle=False)))
-
-      # save image excluding batch size
-      keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_DCN.png'), image[0]) 
-      if not np.allclose(image_dcn, image_array):
-        break
+    image_dcn = next(iter(dcn_augmentations.flow(image_array, None, batch_size=1, shuffle=False)))
+    # save image excluding batch size
+    keras_preprocessing.save_img(os.path.join(dataset_dir,'cat_after_augment_DCN.png'), image[0]) 
+    self.assertFalse(np.allclose(image_dcn, image_array), "Augmented Image and original image are the same")
 
     # remove the below line in order to perform the visual inspection
     shutil.rmtree(dataset_dir)
