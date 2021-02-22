@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np 
 from .generic_model import GenericModelBuilder
 from tensorflow.keras import Sequential
 from collections import namedtuple
@@ -45,19 +46,14 @@ class DropPath(tf.keras.layers.Layer):
   def call(self, inputs):
     x, drop_prob = inputs
 
-    def true_fn(x):
-      keep_prob = 1. - drop_prob
-      shape = [tf.shape(x)[0], 1, 1, 1]
-      # shape = [1, 1, 1, 1]  # this version is simpler to debug
-      mask_dist = tf.random.uniform(shape)
-      mask = tf.math.floor(mask_dist + keep_prob)  # This line emulates tf.keras.backend.random_bernoulli
-      x /= keep_prob
-      x *= mask
-      return x
-
-    return tf.cond(drop_prob > 0,
-                   true_fn=lambda: true_fn(x),
-                   false_fn=lambda: x)
+    keep_prob = 1. - drop_prob
+    shape = [tf.shape(x)[0], 1, 1, 1]
+    # shape = [1, 1, 1, 1]  # this version is simpler to debug
+    mask_dist = tf.random.uniform(shape, dtype=x.dtype)
+    mask = tf.math.floor(mask_dist + keep_prob)  # This line emulates tf.keras.backend.random_bernoulli
+    x = tf.math.divide(x, keep_prob)
+    x = tf.math.multiply(x, mask) 
+    return x
 
 
 class DataFormatHandler(tf.keras.Model):
@@ -486,15 +482,15 @@ class PDartsModel(tf.keras.Model):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self.drop_path_prob = 0
-
-  def train_step(self, data):
+  
+  @tf.function
+  def train_step(self, data, drop_path_prob):
     """ see https://keras.io/guides/customizing_what_happens_in_fit/
     """
     x, y = data
 
-    print(" drop_path_prob: ", self.drop_path_prob)
     with tf.GradientTape() as tape:
-      y_pred = self([x, self.drop_path_prob], training=True)
+      y_pred = self([x, drop_path_prob], training=True)
       loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
 
     trainable_vars = self.trainable_variables
@@ -502,13 +498,16 @@ class PDartsModel(tf.keras.Model):
     self.optimizer.apply_gradients(zip(gradients, trainable_vars))
 
     self.compiled_metrics.update_state(y, y_pred)
-    return {m.name: m.result() for m in self.metrics}
+    output = {m.name: m.result() for m in self.metrics}
+    output['drop_path_prob'] = drop_path_prob
+    return output
 
+  @tf.function
   def test_step(self, data):
     """ see https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/keras/engine/training.py#L1189
     """
     x, y = data
-
+    
     y_pred = self([x, 0.], training=False)
     self.compiled_loss(y, y_pred, regularization_losses=self.losses)
     self.compiled_metrics.update_state(y, y_pred)
@@ -546,11 +545,12 @@ class PDartsModel(tf.keras.Model):
         for step, training_point in enumerate(x):
           callbacks.on_train_batch_begin(step)
           # logs = self.train_step(training_point)
-          logs = self.distribute_strategy.run(self.train_step, args=(training_point,))
+          logs = self.distribute_strategy.run(self.train_step, args=(training_point, self.drop_path_prob))
 
           if self.stop_training:
             break
           print(logs)
+          callbacks.on_train_batch_end(step)
 
         # Validation
         print('Validation')
