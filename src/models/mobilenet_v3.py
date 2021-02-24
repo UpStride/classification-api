@@ -33,8 +33,6 @@ Finally we use expo-nential moving average with decay 0.9999. '''
 from .generic_model import GenericModelBuilder
 import tensorflow as tf
 BATCH_NORM_MOMEMTUM = 0.9
-KERNEL_REGULARIZER = tf.keras.regularizers.l2(l2=1e-3)
-
 
 def _make_divisible(v, divisor=8, min_value=None):
   if min_value is None:
@@ -87,7 +85,7 @@ class _MobileNetV3(GenericModelBuilder):
     self.last_block_output_shape = 3
 
     self.conv_params = {
-        'kernel_regularizer': KERNEL_REGULARIZER,
+        'kernel_regularizer': self.weight_regularizer,
         'padding': 'same',
         'use_bias': False
     }
@@ -106,7 +104,7 @@ class _MobileNetV3(GenericModelBuilder):
     conv_filter = _make_divisible(infilters * expansion)
 
     depthwise_params = {
-        'depthwise_regularizer': KERNEL_REGULARIZER,
+        'depthwise_regularizer': self.weight_regularizer,
         'strides': stride,
         'padding': 'same' if stride == 1 else 'valid',
         'use_bias': False,
@@ -140,9 +138,9 @@ class _MobileNetV3(GenericModelBuilder):
     inputs_seblock = x
     layers = self.layers
     x = layers.GlobalAveragePooling2D(name=prefix + 'squeeze_excite/AvgPool')(x)
-    x = layers.Dense(_make_divisible(filters * se_ratio), kernel_regularizer=KERNEL_REGULARIZER, name=prefix + 'squeeze_excite/Dense')(x)
+    x = layers.Dense(_make_divisible(filters * se_ratio), kernel_regularizer=self.weight_regularizer, name=prefix + 'squeeze_excite/Dense')(x)
     x = layers.ReLU(name=prefix + 'squeeze_excite/Relu')(x)
-    x = layers.Dense(filters, kernel_regularizer=KERNEL_REGULARIZER, name=prefix + 'squeeze_excite/Dense_1')(x)
+    x = layers.Dense(filters, kernel_regularizer=self.weight_regularizer, name=prefix + 'squeeze_excite/Dense_1')(x)
     x = layers.Activation(hard_sigmoid, name=prefix + 'squeeze_excite/Hard_Sigmoid')(x)
     if self.is_channels_first:
       # if we are channel first, then
