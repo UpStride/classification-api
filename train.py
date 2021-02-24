@@ -1,4 +1,6 @@
 import tensorflow as tf
+import os
+import yaml
 import upstride_argparse as argparse
 from src.data import dataloader
 from src.models import model_name_to_class
@@ -127,6 +129,10 @@ def train(config):
 
   # 4
   checkpoint_dir, log_dir, export_dir = create_env_directories(get_experiment_name(config), config['checkpoint_dir'], config['log_dir'], config['export']['dir'])
+  if not os.path.exists(log_dir):
+    os.makedirs(log_dir)
+  with open(os.path.join(log_dir, "conf.yml"), 'w') as file:
+    yaml.dump(config, file)
 
   # 5
   config['server'] = alchemy_api.start_training(config['server'])
