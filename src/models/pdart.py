@@ -1,3 +1,6 @@
+import copy
+import time
+from tensorflow.python.ops import summary_ops_v2
 import tensorflow as tf
 import numpy as np 
 from .generic_model import GenericModelBuilder
@@ -401,6 +404,7 @@ class PdartsCIFAR(GenericModelBuilder):
     self.genotype = eval("PDARTS")
     self.n_layers = 20
     self._auxiliary = True
+    print(kwargs)
 
     # specify that the compilation will not be done with tf.keras.Model but PDartsModel
     self.model_class = PDartsModel
@@ -433,6 +437,7 @@ class PdartsCIFAR(GenericModelBuilder):
     }
 
   def model(self, x):
+    print(dir())
     drop_path_prob = tf.keras.layers.Input([])
     self.inputs.append(drop_path_prob)
     # Stem
@@ -511,7 +516,7 @@ class PDartsModel(tf.keras.Model):
     y_pred = self([x, 0.], training=False)
     self.compiled_loss(y, y_pred, regularization_losses=self.losses)
     self.compiled_metrics.update_state(y, y_pred)
-    return {m.name: m.result() for m in self.metrics}
+    return {'val_' + m.name: m.result() for m in self.metrics}
 
   def on_epoch_begin_callback(self, current_epoch: int, max_epoch: int, max_drop_path_prob: float):
     """ Callback to update drop_path_prob during the training
@@ -530,18 +535,27 @@ class PDartsModel(tf.keras.Model):
     """
     # TODO have same output than Keras
 
-    callbacks = tf.keras.callbacks.CallbackList(callbacks, add_history=True, model=self)
+    print(callbacks)
+    callbacks = tf.keras.callbacks.CallbackList(
+      callbacks,
+      add_history=True,
+      model=self,
+      add_progbar=True,
+      epochs=epochs,
+      verbose=1
+      )
 
     # call all callbacks at the beginning of the training
     callbacks.on_train_begin()
 
+    training_logs = None
+    logs = None
     with self.distribute_strategy.scope():
       for epoch in range(initial_epoch, epochs+1):
         self.reset_metrics()
         callbacks.on_epoch_begin(epoch)
-
         # Training
-        print('\n\n\nTraining')
+        # print('\n\n\nTraining')
         for step, training_point in enumerate(x):
           callbacks.on_train_batch_begin(step)
           # logs = self.train_step(training_point)
@@ -549,16 +563,28 @@ class PDartsModel(tf.keras.Model):
 
           if self.stop_training:
             break
-          print(logs)
-          callbacks.on_train_batch_end(step)
+          # print({k:v.numpy() for k,v in logs.items()})
+          for name, value in logs.items():
+            summary_ops_v2.scalar('batch_' + name, value, step=step)
+          train_logs = logs
+          callbacks.on_train_batch_end(step, train_logs)
+        
+        # epoch_logs = copy.copy(train_logs)
 
         # Validation
-        print('Validation')
+        # print('\n\n\nValidation')
+        callbacks.on_test_begin()
         for step, validation_point in enumerate(validation_data):
-          # logs = self.test_step(validation_point)
-          logs = self.distribute_strategy.run(self.test_step, args=(validation_point,))
-          print(logs)
+          self.reset_metrics()
+          callbacks.on_test_batch_begin(step) 
+          val_logs = self.distribute_strategy.run(self.test_step, args=(validation_point,))
+          # print({k:v.numpy() for k,v in val_logs.items()})
+          callbacks.on_test_batch_end(step, val_logs)
+        # epoch_logs.update(val_logs)
 
-        callbacks.on_epoch_end(epoch)
-
-    callbacks.on_train_end()
+        callbacks.on_test_end(val_logs)
+        
+        callbacks.on_epoch_end(epoch, None)
+    
+    training_logs = epoch_logs
+    callbacks.on_train_end(logs=training_logs)
