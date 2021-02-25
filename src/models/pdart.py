@@ -404,7 +404,6 @@ class PdartsCIFAR(GenericModelBuilder):
     self.genotype = eval("PDARTS")
     self.n_layers = 20
     self._auxiliary = True
-    print(kwargs)
 
     # specify that the compilation will not be done with tf.keras.Model but PDartsModel
     self.model_class = PDartsModel
@@ -437,7 +436,6 @@ class PdartsCIFAR(GenericModelBuilder):
     }
 
   def model(self, x):
-    print(dir())
     drop_path_prob = tf.keras.layers.Input([])
     self.inputs.append(drop_path_prob)
     # Stem
@@ -495,7 +493,7 @@ class PDartsModel(tf.keras.Model):
     x, y = data
 
     with tf.GradientTape() as tape:
-      y_pred = self([x, drop_path_prob], training=True)
+      y_pred = self([x, drop_path_prob], training=True)  
       loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
 
     trainable_vars = self.trainable_variables
@@ -533,9 +531,6 @@ class PDartsModel(tf.keras.Model):
     that take care of everything
 
     """
-    # TODO have same output than Keras
-
-    print(callbacks)
     callbacks = tf.keras.callbacks.CallbackList(
       callbacks,
       add_history=True,
@@ -549,42 +544,41 @@ class PDartsModel(tf.keras.Model):
     callbacks.on_train_begin()
 
     training_logs = None
-    logs = None
     with self.distribute_strategy.scope():
-      for epoch in range(initial_epoch, epochs+1):
+      for epoch in range(initial_epoch, epochs):
+        # reset the metrics at beginning of each epoch
         self.reset_metrics()
         callbacks.on_epoch_begin(epoch)
         # Training
-        # print('\n\n\nTraining')
         for step, training_point in enumerate(x):
           callbacks.on_train_batch_begin(step)
-          # logs = self.train_step(training_point)
-          logs = self.distribute_strategy.run(self.train_step, args=(training_point, self.drop_path_prob))
-
+          # Note: If the argument(self.drop_path_prob) passed to run is not a numpy array or tensor then the graph is generated multiple times per epoch
+          # This behaviour is unexpected and weird. Upon investigating the doc string(link below) and the run method in the self.distribute_stratgegy
+          # The args can be indeed passed as python variable which in our case causes multiple graph generation and not cleared from
+          # memory until the python process ends. This could be a bug. 
+          # https://github.com/tensorflow/tensorflow/blob/v2.4.1/tensorflow/python/distribute/distribute_lib.py#L1235
+          logs = self.distribute_strategy.run(self.train_step, args=(training_point, tf.convert_to_tensor(self.drop_path_prob)))
           if self.stop_training:
             break
-          # print({k:v.numpy() for k,v in logs.items()})
-          for name, value in logs.items():
-            summary_ops_v2.scalar('batch_' + name, value, step=step)
-          train_logs = logs
-          callbacks.on_train_batch_end(step, train_logs)
+          callbacks.on_train_batch_end(step, logs) 
         
-        # epoch_logs = copy.copy(train_logs)
+        # save a copy of the train step logs  
+        epoch_logs = copy.copy(logs)
 
         # Validation
-        # print('\n\n\nValidation')
         callbacks.on_test_begin()
         for step, validation_point in enumerate(validation_data):
-          self.reset_metrics()
           callbacks.on_test_batch_begin(step) 
-          val_logs = self.distribute_strategy.run(self.test_step, args=(validation_point,))
-          # print({k:v.numpy() for k,v in val_logs.items()})
-          callbacks.on_test_batch_end(step, val_logs)
-        # epoch_logs.update(val_logs)
+          logs = self.distribute_strategy.run(self.test_step, args=(validation_point,))
+          callbacks.on_test_batch_end(step, logs)
 
-        callbacks.on_test_end(val_logs)
-        
-        callbacks.on_epoch_end(epoch, None)
+        # add validation logs ensure the "val_" is prefixed with the key in the test_step.
+        # Tensorboard callback (on_epoch_end) handles train and validation scalars
+        # https://github.com/tensorflow/tensorflow/blob/v2.4.1/tensorflow/python/keras/callbacks.py#L2366
+        epoch_logs.update(logs)
+
+        callbacks.on_test_end(logs)
+        callbacks.on_epoch_end(epoch, epoch_logs)
     
     training_logs = epoch_logs
-    callbacks.on_train_end(logs=training_logs)
+    callbacks.on_train_end(logs=training_logs) # probably useless, in case if any callback needs the logs on train end. 
