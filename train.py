@@ -64,9 +64,14 @@ def get_compiled_model(config):
   model = model_name_to_class[config['model']['name']](**kwargs).build()
   model.summary()
   optimizer = get_optimizer(config['optimizer'])
+  
+  metrics = ['accuracy']
+  if config['model']['num_classes'] > 10:
+    metrics.append('top_k_categorical_accuracy') # add top k when number of classes is more than 10
   model.compile(optimizer=optimizer, loss='categorical_crossentropy',
-                metrics=['accuracy', 'top_k_categorical_accuracy'], 
+                metrics=metrics, 
                 loss_weights=loss_weights) 
+
   # output the optimizer to save it in the checkpoint
   return model, optimizer
 

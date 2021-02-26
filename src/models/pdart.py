@@ -409,7 +409,7 @@ class PdartsCIFAR(GenericModelBuilder):
     self.model_class = PDartsModel
 
     # general configuration of some layers
-    weight_regularizer = tf.keras.regularizers.l2(l=0.0003)
+    weight_regularizer = tf.keras.regularizers.l2(l2=kwargs['weight_decay'])
 
     self.bn_conf = {
         'axis': -1,
@@ -544,6 +544,7 @@ class PDartsModel(tf.keras.Model):
     callbacks.on_train_begin()
 
     training_logs = None
+    epoch_logs = None
     with self.distribute_strategy.scope():
       for epoch in range(initial_epoch, epochs):
         # reset the metrics at beginning of each epoch
@@ -566,18 +567,19 @@ class PDartsModel(tf.keras.Model):
         epoch_logs = copy.copy(logs)
 
         # Validation
+        self.reset_metrics()
         callbacks.on_test_begin()
         for step, validation_point in enumerate(validation_data):
           callbacks.on_test_batch_begin(step) 
-          logs = self.distribute_strategy.run(self.test_step, args=(validation_point,))
-          callbacks.on_test_batch_end(step, logs)
+          val_logs = self.distribute_strategy.run(self.test_step, args=(validation_point,))
+          callbacks.on_test_batch_end(step, val_logs)
 
         # add validation logs ensure the "val_" is prefixed with the key in the test_step.
         # Tensorboard callback (on_epoch_end) handles train and validation scalars
         # https://github.com/tensorflow/tensorflow/blob/v2.4.1/tensorflow/python/keras/callbacks.py#L2366
-        epoch_logs.update(logs)
+        epoch_logs.update(val_logs)
 
-        callbacks.on_test_end(logs)
+        callbacks.on_test_end(val_logs)
         callbacks.on_epoch_end(epoch, epoch_logs)
     
     training_logs = epoch_logs
