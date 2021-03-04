@@ -1,5 +1,6 @@
 import tensorflow as tf
 import os
+import copy
 import yaml
 import upstride_argparse as argparse
 from src.data import dataloader
@@ -23,6 +24,10 @@ arguments = [
     ['namespace', 'config', global_conf.arguments],
     [str, 'load_searched_arch', '', 'model definition file containing the searched architecture', ],
     [str, 'experiment_name', '', 'model definition file containing the searched architecture', ],
+    [bool, 'progressive_resizing', False, 'Whether to use progressive resizing or not.'],
+    ['list[float]', 'resizing_sizes', [0.5, 1], 'used for progressive resizing. The list of different sizes to use (in proportion to the original size)'],
+    ['list[float]', 'resizing_training_portions', [0.5, 0.5], 'used for progressive resizing. The repartition of the training epochs for each size'],
+    [bool, 'reset_after_resize', False, 'used in progressive resizing. Whether to reset the callbacks and optimizer after each resize'],
     ['namespace', 'model', [
         [int, 'upstride_type', -1, 'if set to a number in [0, 3] then use this upstride type', lambda x: x < 4 and x > -2],
         [int, "factor", 1, 'division factor to scale the number of channel. factor=2 means the model will have half the number of channels compare to default implementation'],
@@ -96,6 +101,77 @@ def get_experiment_name(params):
   return experiment_dir
 
 
+def progressive_training(model, config, train_dataset, val_dataset, callbacks,
+                         latest_epoch, max_queue_size=16, optimizer=None):
+  """Trains the model using progressive resizing
+
+  Images resolution will be modified during the training following config["resizing_sizes"]
+  The specific portions of the total number of epochs dedicated to each size
+  is defined in config["resizing_training_portions"]
+
+  example:
+  image resolution = 768 x 512
+  config["resizing_sizes"] = [0.5, 1]
+  config["resizing_training_portions"] = [0.7,0.3]
+  config['num_epochs'] = 100
+   ->
+  For the 0.7*100=70 first epochs the network will train
+      with (0.5*768 x 0.5*512) = (384 x 256) resolution
+  For the 0.3*100=30 following epochs, the network will train
+      with (1*768 x 1*512) = (768 x 512) resolution
+
+  if config["reset_after_resize"] is True, the callbacks and optimizer will be
+  reset after each change in resolution.
+  """
+
+  sizes_list = config["resizing_sizes"]
+  resizing_portions = config["resizing_training_portions"]
+  assert len(sizes_list) == len(resizing_portions), "resizing_sizes and resizing_portions must have the same length"
+  assert sum(resizing_portions) == 1, "the sum of resizing_portions must equal 1"
+
+  reset = config["reset_after_resize"]
+  if reset:
+    callbacks_tmp = [copy.deepcopy(callbacks) for _ in range(len(sizes_list))]
+
+  total_epochs = config['num_epochs']
+  epochs_by_portion = [int(total_epochs * resizing_portion) for resizing_portion in resizing_portions]
+  epochs_by_portion[-1] = total_epochs - sum(epochs_by_portion[:-1])  # to ensure the right total nb of epochs
+  current_epoch = 0
+
+
+  for element in train_dataset:
+    original_size = element[0].shape  # N, H, W, C
+    break
+
+  for i, size in enumerate(sizes_list):
+    if latest_epoch >= current_epoch + epochs_by_portion[i]:
+      current_epoch += epochs_by_portion[i]
+      continue
+    current_epoch = max(latest_epoch, current_epoch)
+
+    if abs(size-1) > 0.001:
+      resize = tf.keras.layers.experimental.preprocessing.Resizing(int(original_size[1] * size),
+                                                                   int(original_size[2] * size))
+      resized_train_set = train_dataset.map(lambda x, y: (resize(x), y)).prefetch(tf.data.experimental.AUTOTUNE)
+    else:
+      resized_train_set = train_dataset
+    if reset:
+      callbacks = callbacks_tmp[i]
+      optimizer = get_optimizer(config['optimizer'])
+      model.compile(optimizer=optimizer, loss='categorical_crossentropy',
+                    metrics=['accuracy', 'top_k_categorical_accuracy'])
+
+    model.fit(x=resized_train_set,
+              validation_data=val_dataset,
+              epochs=current_epoch + epochs_by_portion[i],
+              callbacks=callbacks,
+              max_queue_size=max_queue_size,
+              initial_epoch=current_epoch
+              )
+    current_epoch += epochs_by_portion[i]
+
+
+
 def train(config):
   """
   This function setup:
@@ -151,13 +227,24 @@ def train(config):
     callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: callback_epoch(epoch, config['num_epochs'], config['drop_path_prob'])))
 
   # 6 training
-  model.fit(x=train_dataset,
-            validation_data=val_dataset,
-            epochs=config['num_epochs'],
-            callbacks=callbacks,
-            max_queue_size=16,
-            initial_epoch=latest_epoch
-            )
+  if config['progressive_resizing']:
+    progressive_training(model=model,
+                         config=config,
+                         train_dataset=train_dataset,
+                         val_dataset=val_dataset,
+                         callbacks=callbacks,
+                         latest_epoch=latest_epoch,
+                         max_queue_size=16,
+                         optimizer=optimizer)
+  else:
+    model.fit(x=train_dataset,
+              validation_data=val_dataset,
+              epochs=config['num_epochs'],
+              callbacks=callbacks,
+              max_queue_size=16,
+              initial_epoch=latest_epoch
+              )
+
 
   # 7 training
   print("export model")
