@@ -1,8 +1,6 @@
 import tensorflow as tf
 from .generic_model import GenericModelBuilder
 
-is_channel_fist = False
-
 BATCHNORM_MOMENTUM = 0.9
 
 # This function is taken from the original tf repo.
@@ -21,7 +19,7 @@ def _make_divisible(v, divisor, min_value=None):
   return new_v
 
 
-def correct_pad(inputs, kernel_size):
+def correct_pad(inputs, kernel_size, is_channels_first):
   """Returns a tuple for zero-padding for 2D convolution with downsampling.
   Args:
       input_size: An integer or tuple/list of 2 integers.
@@ -31,7 +29,7 @@ def correct_pad(inputs, kernel_size):
   """
   if type(inputs) == list:
     inputs = inputs[0]
-  input_size = inputs.shape[2:4] if is_channel_fist else inputs.shape[1:3]
+  input_size = inputs.shape[2:4] if is_channels_first else inputs.shape[1:3]
   if isinstance(kernel_size, int):
     kernel_size = (kernel_size, kernel_size)
   adjust = (1, 1) if input_size[0] is None else (1 - input_size[0] % 2, 1 - input_size[1] % 2)
@@ -43,7 +41,7 @@ class _MobileNetV2(GenericModelBuilder):
   def __init__(self, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self.last_block_output_shape = 3
-    self.bn_axis = 1 if is_channel_fist else -1
+    self.bn_axis = 1 if self.is_channels_first else -1
 
   def _inverted_res_block(self, x, expansion, stride, alpha, filters, block_id):
     layers = self.layers  # we don't want to switch between tf and upstride in this block
@@ -64,7 +62,7 @@ class _MobileNetV2(GenericModelBuilder):
 
     # Depthwise
     if stride == 2:
-      x = layers.ZeroPadding2D(padding=correct_pad(x, 3), name=prefix + 'pad')(x)
+      x = layers.ZeroPadding2D(padding=correct_pad(x, 3, self.is_channels_first), name=prefix + 'pad')(x)
     x = layers.DepthwiseConv2D(kernel_size=3, strides=stride, activation=None, use_bias=False, padding='same' if stride == 1 else 'valid',
                                     name=prefix + 'depthwise', depthwise_regularizer=self.weight_regularizer)(x)
     x = layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'depthwise_BN')(x)
@@ -94,15 +92,11 @@ class _MobileNetV2(GenericModelBuilder):
             - If `alpha` = 1, default number of filters from the paper
                 are used at each layer.
     """
-    if is_channel_fist:
-      x = tf.transpose(x, [0, 3, 1, 2])
-      tf.keras.backend.set_image_data_format('channels_first')
-
     weight_regularizer = self.weight_regularizer
 
     first_block_filters = _make_divisible(32 * alpha // self.factor, 8)
-    x = self.layers.ZeroPadding2D(padding=correct_pad(x, 3), name='Conv1_pad')(x)
-    x = self.layers.Conv2D(first_block_filters, kernel_size=3, strides=self.fist_conv_stride, padding='valid',
+    x = self.layers.ZeroPadding2D(padding=correct_pad(x, 3, self.is_channels_first), name='Conv1_pad')(x)
+    x = self.layers.Conv2D(first_block_filters, kernel_size=3, strides=self.first_conv_stride, padding='valid',
                                   use_bias=False, name='Conv1', kernel_regularizer=self.weight_regularizer)(x)
     x = self.layers.BatchNormalization(axis=self.bn_axis, epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name='bn_Conv1')(x)
     x = self.layers.ReLU(6., name='Conv1_relu')(x)
@@ -136,7 +130,7 @@ class _MobileNetV2(GenericModelBuilder):
 class MobileNetV2(_MobileNetV2):
   def __init__(self, *args, **kwargs):
     # (channels, num_blocks, stride, expansion)
-    self.fist_conv_stride = 2
+    self.first_conv_stride = 2
     self.configurations = [(16, 1, 1, 1),
                            (24, 2, 2, 6),
                            (32, 3, 2, 6),
@@ -147,17 +141,10 @@ class MobileNetV2(_MobileNetV2):
     super().__init__(*args, **kwargs)
 
 
-class MobileNetV2NCHW(MobileNetV2):
-  def __init__(self, *args, **kwargs):
-    global is_channel_fist
-    is_channel_fist = True
-    super().__init__(*args, **kwargs)
-
-
 class MobileNetV2Cifar10(_MobileNetV2):
   def __init__(self, *args, **kwargs):
     # (channels, num_blocks, stride, expansion)
-    self.fist_conv_stride = 1
+    self.first_conv_stride = 1
     self.configurations = [(16, 1, 1, 1),
                            (24, 2, 1, 6),
                            (32, 3, 2, 6),
@@ -167,18 +154,10 @@ class MobileNetV2Cifar10(_MobileNetV2):
                            (320, 1, 1, 6)]
     super().__init__(*args, **kwargs)
 
-
-class MobileNetV2Cifar10NCHW(MobileNetV2Cifar10):
-  def __init__(self, *args, **kwargs):
-    global is_channel_fist
-    is_channel_fist = True
-    super().__init__(*args, **kwargs)
-
-
 class MobileNetV2Cifar10_2(_MobileNetV2):
   def __init__(self, *args, **kwargs):
     # (channels, num_blocks, stride, expansion)
-    self.fist_conv_stride = 1
+    self.first_conv_stride = 1
     self.configurations = [(16, 1, 1, 1),
                            (24, 2, 1, 6),
                            (32, 3, 1, 6),
@@ -195,7 +174,7 @@ class MobileNetV2Cifar10Hyper(_MobileNetV2):
 
   def model(self, x):
     # (channels, num_blocks, stride, expansion)
-    self.fist_conv_stride = 1
+    self.first_conv_stride = 1
 
     # define 10 MobileNetv2 versions
     blocks_family = [

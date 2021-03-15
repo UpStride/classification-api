@@ -5,7 +5,6 @@ import yaml
 from .generic_model import GenericModelBuilder
 from .fbnetv2 import ChannelMasking
 from .mobilenet import correct_pad
-is_channel_fist = False
 
 BATCHNORM_MOMENTUM = 0.9
 arch_param_regularizer = tf.keras.regularizers.l2(l=0.0005)
@@ -70,7 +69,7 @@ class _FBNet_MobileNetV2(GenericModelBuilder):
 
     # Depthwise
     if stride == 2:
-      x = layers.ZeroPadding2D(padding=correct_pad(x, 3), name=prefix + 'pad')(x)
+      x = layers.ZeroPadding2D(padding=correct_pad(x, 3, self.is_channels_first), name=prefix + 'pad')(x)
     x = layers.DepthwiseConv2D(kernel_size=3, strides=stride, activation=None, use_bias=False, padding='same' if stride == 1 else 'valid',
                                     name=prefix + 'depthwise', depthwise_regularizer=weight_regularizer)(x)
     x = layers.BatchNormalization(epsilon=1e-3, momentum=BATCHNORM_MOMENTUM, name=prefix + 'depthwise_BN')(x)
@@ -101,14 +100,10 @@ class _FBNet_MobileNetV2(GenericModelBuilder):
             - If `alpha` = 1, default number of filters from the paper
                 are used at each layer.
     """
-    if is_channel_fist:
-      x = tf.transpose(x, [0, 3, 1, 2])
-      tf.keras.backend.set_image_data_format('channels_first')
-
     weight_regularizer = self.weight_regularizer
 
     # first_block_filters = _make_divisible(16, 8)
-    x = self.layers.ZeroPadding2D(padding=correct_pad(x, 3), name='conv1_pad')(x)
+    x = self.layers.ZeroPadding2D(padding=correct_pad(x, 3, self.is_channels_first), name='conv1_pad')(x)
 
     first_block_filters = self.mapping['conv2d_01']
     if not self.load_searched_arch:
@@ -143,13 +138,6 @@ class _FBNet_MobileNetV2(GenericModelBuilder):
     # x = self.layers.Dense(self.label_dim, use_bias=True, name='Logits', kernel_regularizer=weight_regularizer)(x)
     return x
 
-
-
-class FBNet_MobileNetV2NCHW(_FBNet_MobileNetV2):
-  def __init__(self, *args, **kwargs):
-    global is_channel_fist
-    is_channel_fist = True
-    super().__init__(*args, **kwargs)
 
 
 class FBNet_MobileNetV2CIFAR(_FBNet_MobileNetV2):

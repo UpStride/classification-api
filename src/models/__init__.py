@@ -2,13 +2,12 @@ import sys
 import tensorflow as tf
 import tensorflow.keras.layers as tf_layers
 
-from .alexnet import AlexNet, AlexNetQ, AlexNetToy, AlexNetNCHW
-from .mobilenet import MobileNetV2, MobileNetV2NCHW, MobileNetV2Cifar10, MobileNetV2Cifar10_2, MobileNetV2Cifar10Hyper, MobileNetV2Cifar10NCHW
+from .alexnet import AlexNet, AlexNetQ, AlexNetToy
+from .mobilenet import MobileNetV2, MobileNetV2Cifar10, MobileNetV2Cifar10_2, MobileNetV2Cifar10Hyper
 from .mobilenet_v3 import MobileNetV3Large, MobileNetV3Small, MobileNetV3LargeCIFAR, MobileNetV3SmallCIFAR
 
 from .resnet import (ResNet18, ResNet34, ResNet50, ResNet101, ResNet152,
-                     ResNet20CIFAR, ResNet32CIFAR, ResNet44CIFAR, ResNet56CIFAR, ResNetHyper,
-                     ResNet18NCHW, ResNet34NCHW, ResNet50NCHW, ResNet101NCHW, ResNet152NCHW)
+                     ResNet20CIFAR, ResNet32CIFAR, ResNet44CIFAR, ResNet56CIFAR, ResNetHyper)
 from .wide_resnet import WideResNet28_10, WideResNet40_2
 from .squeezenet import SqueezeNet
 from .tiny_darknet import TinyDarknet
@@ -60,19 +59,6 @@ model_name_to_class = {
     # Pdart model
     "PdartsCIFAR": PdartsCIFAR,
     "PdartsImageNet": PdartsImageNet,
-    # Channel first models
-    "AlexNetNCHW": AlexNetNCHW,
-    "ResNet18NCHW": ResNet18NCHW,
-    "ResNet34NCHW": ResNet34NCHW,
-    "ResNet50NCHW": ResNet50NCHW,
-    "ResNet101NCHW": ResNet101NCHW,
-    "ResNet152NCHW": ResNet152NCHW,
-    "MobileNetV2NCHW": MobileNetV2NCHW,
-    "MobileNetV2Cifar10NCHW": MobileNetV2Cifar10NCHW,
-    "MobileNetV3Large": MobileNetV3Large,
-    "MobileNetV3Small": MobileNetV3Small,
-    "MobileNetV3LargeCIFAR": MobileNetV3LargeCIFAR,
-    "MobileNetV3SmallCIFAR": MobileNetV3SmallCIFAR,
     # Hyper Model
     "SimpleHyper": SimpleHyper,
     "ResNetHyper": ResNetHyper,

@@ -6,11 +6,10 @@ weight_init = tf.keras.initializers.VarianceScaling()
 
 
 class ResNet(GenericModelBuilder):
-  def __init__(self, res_n, *args, is_channel_fist=False, **kwargs):
+  def __init__(self, res_n, *args, **kwargs):
     super(ResNet, self).__init__(*args, **kwargs)
     self.res_n = res_n
-    self.is_channel_fist = is_channel_fist
-    self.nb_axis = 1 if is_channel_fist else -1
+    self.nb_axis = 1 if self.is_channels_first else -1
 
   def get_residual_layer(self):
     n_to_residual = {
@@ -34,10 +33,6 @@ class ResNet(GenericModelBuilder):
     return n_to_residual[self.res_n]
 
   def model(self, x):
-    if self.is_channel_fist:
-      x = tf.transpose(x, [0, 3, 1, 2])
-      tf.keras.backend.set_image_data_format('channels_first')
-
     if self.res_n < 50:
       residual_block = self.resblock
     else:
@@ -145,37 +140,11 @@ class ResNet18(ResNet):
     super().__init__(18, *args, **kwargs)
 
 
-class ResNet50NCHW(ResNet):
-  def __init__(self, *args, **kwargs):
-    super().__init__(50, *args, is_channel_fist=True, **kwargs)
-
-
-class ResNet101NCHW(ResNet):
-  def __init__(self, *args, **kwargs):
-    super().__init__(101, *args, is_channel_fist=True, **kwargs)
-
-
-class ResNet152NCHW(ResNet):
-  def __init__(self, *args, **kwargs):
-    super().__init__(152, *args, is_channel_fist=True, **kwargs)
-
-
-class ResNet34NCHW(ResNet):
-  def __init__(self, *args, **kwargs):
-    super().__init__(34, *args, is_channel_fist=True, **kwargs)
-
-
-class ResNet18NCHW(ResNet):
-  def __init__(self, *args, **kwargs):
-    super().__init__(18, *args, is_channel_fist=True, **kwargs)
-
-
 class ResNetCIFAR(GenericModelBuilder):
-  def __init__(self, res_n, *args, is_channel_fist=False, **kwargs):
+  def __init__(self, res_n, *args, **kwargs):
     super(ResNetCIFAR, self).__init__(*args, **kwargs)
     self.res_n = res_n
-    self.is_channel_fist = is_channel_fist
-    self.nb_axis = 1 if is_channel_fist else -1
+    self.nb_axis = 1 if self.is_channels_first else -1
 
   def get_residual_layer(self):
     n_to_residual = {
@@ -187,10 +156,6 @@ class ResNetCIFAR(GenericModelBuilder):
     return n_to_residual[self.res_n] * 3
 
   def model(self, x):
-    if self.is_channel_fist:
-      x = tf.transpose(x, [0, 3, 1, 2])
-      tf.keras.backend.set_image_data_format('channels_first')
-
     residual_list = self.get_residual_layer()
     weight_regularizer = self.weight_regularizer
     ch = 16

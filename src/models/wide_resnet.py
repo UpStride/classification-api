@@ -5,18 +5,12 @@ from .generic_model import GenericModelBuilder
 
 weight_init = tf.keras.initializers.VarianceScaling()
 
-is_channel_fist = False
-
 
 class WideResNet(GenericModelBuilder):
   def __init__(self, *args, **kwargs):
     super(WideResNet, self).__init__(*args, **kwargs)
 
   def model(self, x):
-    if is_channel_fist:
-      x = tf.transpose(x, [0, 3, 1, 2])
-      tf.keras.backend.set_image_data_format('channels_first')
-
     layers = self.layers
     weight_regularizer = self.weight_regularizer
     num_blocks_per_resnet = self.blocks_per_group
@@ -82,7 +76,7 @@ class WideResNet(GenericModelBuilder):
     if in_filter != out_filter:
       x_init = layers.AveragePooling2D(pool_size=(stride, stride), name=block_name + '/avg_pool_0')(x_init)
       # hack to pad the channels
-      if is_channel_fist:
+      if self.is_channels_first:
         x_init = tf.transpose(x_init, [0, 2, 3, 1]) # put the channels at index 3
         x_init = layers.ZeroPadding2D(padding=(0,(out_filter-in_filter)//2), name=block_name + '/zero_pad_0')(x_init)
         x_init = tf.transpose(x_init, [0, 3, 1, 2]) # put the channels back at index 1
