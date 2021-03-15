@@ -1,38 +1,39 @@
 import tensorflow as tf
 # from kerastuner.applications import HyperResNet
-from .generic_model import GenericModel
+from .generic_model import GenericModelBuilder
 
 
-class SimpleHyper(GenericModel):
-  def model(self):
-    self.x = self.layers().Conv2D(self.hp.Int('conv1_filter',
-                                              min_value=32//self.factor,
-                                              max_value=512//self.factor,
-                                              step=32//self.factor), (5, 5), 2, padding='same',
-                                  use_bias=False,
-                                  name='conv_1')(self.x)
-    self.x = self.layers().BatchNormalization()(self.x)
-    self.x = self.layers().Activation('relu')(self.x)
-    self.x = self.layers().MaxPooling2D((3, 3), strides=(2, 2))(self.x)
+class SimpleHyper(GenericModelBuilder):
+  def model(self, x):
+    x = self.layers.Conv2D(self.hp.Int('conv1_filter',
+                                       min_value=32//self.factor,
+                                       max_value=512//self.factor,
+                                       step=32//self.factor), (5, 5), 2, padding='same',
+                           use_bias=False,
+                           name='conv_1')(x)
+    x = self.layers.BatchNormalization()(x)
+    x = self.layers.Activation('relu')(x)
+    x = self.layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
     for i in range(self.hp.Int('repeat_conv',
                                min_value=1,
                                max_value=3,
                                step=1)):
-      self.x = self.layers().Conv2D(self.hp.Int('conv_filter',
-                                                min_value=32//self.factor,
-                                                max_value=512//self.factor,
-                                                step=32//self.factor), (3, 3), padding='same',
-                                    use_bias=False)(self.x)
-      self.x = self.layers().BatchNormalization()(self.x)
-      self.x = self.layers().Activation('relu')(self.x)
-      self.x = self.layers().MaxPooling2D((3, 3), strides=(2, 2))(self.x)
-    self.x = self.layers().Flatten()(self.x)
-    self.x = self.layers().Dense(self.label_dim,
-                                 use_bias=True,
-                                 name='dense_1')(self.x)
+      x = self.layers.Conv2D(self.hp.Int('conv_filter',
+                                         min_value=32//self.factor,
+                                         max_value=512//self.factor,
+                                         step=32//self.factor), (3, 3), padding='same',
+                             use_bias=False)(x)
+      x = self.layers.BatchNormalization()(x)
+      x = self.layers.Activation('relu')(x)
+      x = self.layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
+    x = self.layers.Flatten()(x)
+    x = self.layers.Dense(self.label_dim,
+                          use_bias=True,
+                          name='dense_1')(x)
+    return x
 
 
-class ResNetV2Hyper(GenericModel):
+class ResNetV2Hyper(GenericModelBuilder):
   """code from https://github.com/keras-team/keras-tuner/blob/master/kerastuner/applications/resnet.py
   """
 
@@ -47,28 +48,29 @@ class ResNetV2Hyper(GenericModel):
     bn_axis = 3 if tf.keras.backend.image_data_format() == 'channels_last' else 1
 
     # Initial conv2d block.
-    self.x = self.layers().ZeroPadding2D(padding=((3, 3), (3, 3)), name='conv1_pad')(self.x)
-    self.x = self.layers().Conv2D(64 // factor, 7, strides=2, use_bias=use_bias, name='conv1_conv')(self.x)
-    self.x = self.layers().ZeroPadding2D(padding=((1, 1), (1, 1)), name='pool1_pad')(self.x)
-    self.x = self.layers().MaxPooling2D(3, strides=2, name='pool1_pool')(self.x)
+    x = self.layers.ZeroPadding2D(padding=((3, 3), (3, 3)), name='conv1_pad')(x)
+    x = self.layers.Conv2D(64 // factor, 7, strides=2, use_bias=use_bias, name='conv1_conv')(x)
+    x = self.layers.ZeroPadding2D(padding=((1, 1), (1, 1)), name='pool1_pad')(x)
+    x = self.layers.MaxPooling2D(3, strides=2, name='pool1_pool')(x)
 
     # Middle hypertunable stack.
-    self.x = stack2(self.layers(), self.x, 64 // factor, 3, name='conv2')
-    self.x = stack2(self.layers(), self.x, 128 // factor, conv3_depth, name='conv3')
-    self.x = stack2(self.layers(), self.x, 256 // factor, conv4_depth, name='conv4')
-    self.x = stack2(self.layers(), self.x, 512 // factor, 3, stride1=1, name='conv5')
+    x = stack2(self.layers, x, 64 // factor, 3, name='conv2')
+    x = stack2(self.layers, x, 128 // factor, conv3_depth, name='conv3')
+    x = stack2(self.layers, x, 256 // factor, conv4_depth, name='conv4')
+    x = stack2(self.layers, x, 512 // factor, 3, stride1=1, name='conv5')
 
     # Top of the model.
-    self.x = self.layers().BatchNormalization(axis=bn_axis, epsilon=1.001e-5, name='post_bn')(self.x)
-    self.x = self.layers().Activation('relu', name='post_relu')(self.x)
+    x = self.layers.BatchNormalization(axis=bn_axis, epsilon=1.001e-5, name='post_bn')(x)
+    x = self.layers.Activation('relu', name='post_relu')(x)
 
     pooling = self.hp.Choice('pooling', ['avg', 'max'], default='avg')
     if pooling == 'avg':
-      self.x = self.layers().GlobalAveragePooling2D(name='avg_pool')(self.x)
+      x = self.layers.GlobalAveragePooling2D(name='avg_pool')(x)
     elif pooling == 'max':
-      self.x = self.layers().GlobalMaxPooling2D(name='max_pool')(self.x)
+      x = self.layers.GlobalMaxPooling2D(name='max_pool')(x)
 
-    self.x = self.layers().Dense(self.label_dim, activation='softmax', name='probs')(self.x)
+    x = self.layers.Dense(self.label_dim, activation='softmax', name='probs')(x)
+    return x
 
 
 def block2(layers, x, filters, kernel_size=3, stride=1, conv_shortcut=False, name=None):

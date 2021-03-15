@@ -145,18 +145,19 @@ to train a mobilenet for 20 epochs on cifar10, a training command can looks like
 
 ```bash
 python train.py \
-  --model_name MobileNetV2 \
+  --model.name MobileNetV2 \
+  --model.num_classes 10 \
+  --model.input_size 32 32 3 \
   --num_epochs 20 \
   --checkpoint_dir /tmp/checkpoint \
   --log_dir /tmp/log \
-  --framework tensorflow \
   --export.dir /tmp \
   --dataloader.name cifar10 \
-  --input_size 32 32 3 \
   --dataloader.train_list RandomHorizontalFlip Normalize \
   --dataloader.val_list Normalize \
+  --dataloader.val_split_id validation \
+  --dataloader.train_split_id train \
   --dataloader.batch_size 64 \
-  --num_classes 10 \
   --optimizer.lr 0.0001
 ```
 
@@ -171,27 +172,28 @@ python train.py --yaml_config conf.yml
 and the file `conf.yml`:
 
 ```yaml
-model_name: MobileNetV2
+model:
+  name: MobileNetV2
+  num_classes: 10
+  input_size: [32, 32, 3]
 num_epochs: 20
 checkpoint_dir: /tmp/checkpoint
 log_dir: /tmp/log
-framework: tensorflow
-export_dir: /tmp
+export:
+  dir: /tmp
 dataloader:
   name: cifar10
   train_list: [RandomHorizontalFlip, Normalize]
   val_list: [Normalize]
+  val_split_id: validation
+  train_split_id: train
   batch_size: 64
-input_size: [32, 32, 3]
-num_classes: 10
 optimizer:
   lr: 0.0001
 ```
 
 you can also mix both training file and command line. If a parameter is defined in both, then the command line will prevail.
 For more information on the argument parser, please visit https://github.com/UpStride/betterargparse
-
-
 
 
 ## Keras-Tuner

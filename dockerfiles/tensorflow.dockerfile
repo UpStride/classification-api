@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:2.3.0-gpu
+FROM tensorflow/tensorflow:2.4.1-gpu
 
 RUN apt-get update && \
     apt-get install -y libsm6 libxrender1 libxext6 libgl1-mesa-glx && \
