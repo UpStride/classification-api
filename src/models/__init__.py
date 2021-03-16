@@ -56,6 +56,10 @@ model_name_to_class = {
     "SqueezeNet": SqueezeNet,
     "TinyDarknet": TinyDarknet,
     "VGG16": VGG16,
+    "MobileNetV3Large": MobileNetV3Large,
+    "MobileNetV3Small": MobileNetV3Small,
+    "MobileNetV3LargeCIFAR": MobileNetV3LargeCIFAR,
+    "MobileNetV3SmallCIFAR": MobileNetV3SmallCIFAR,
     # Pdart model
     "PdartsCIFAR": PdartsCIFAR,
     "PdartsImageNet": PdartsImageNet,
