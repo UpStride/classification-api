@@ -109,7 +109,6 @@ class NASNet(GenericModelBuilder):
 
     layers = self.layers
 
-    self.channel_axis = 1 if self.backend.image_data_format() == 'channels_first' else -1
     img_dim = 2 if self.backend.image_data_format() == 'channels_first' else -2
 
     if type(ip) == list:
@@ -172,8 +171,6 @@ class NASNet(GenericModelBuilder):
 
     layers = self.layers
 
-    self.channel_axis = 1 if self.backend.image_data_format() == 'channels_first' else -1
-
     with self.backend.name_scope('normal_A_block_%s' % id):
       p = self._adjust_block(p, ip, filters, weight_decay, id)
 
@@ -225,8 +222,6 @@ class NASNet(GenericModelBuilder):
     """"""
 
     layers = self.layers
-    self.channel_axis = 1 if self.backend.image_data_format() == 'channels_first' else -1
-
     with self.backend.name_scope('reduction_A_block_%s' % id):
       p = self._adjust_block(p, ip, filters, weight_decay, id)
 
@@ -401,7 +396,6 @@ class NASNet(GenericModelBuilder):
     penultimate_filters = self.penultimate_filters // self.factor
     stem_filters = self.stem_filters // self.factor
 
-    self.channel_axis = 1 if self.backend.image_data_format() == 'channels_first' else -1
     filters = penultimate_filters // 24
 
     # Avoid odd number of filters to escape dimension mismatch

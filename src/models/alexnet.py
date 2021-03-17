@@ -68,12 +68,11 @@ class AlexNet(GenericModelBuilder):
 
 class AlexNetQ(GenericModelBuilder):
   def model(self, x):
-    axis = 1 if self.is_channels_first else -1
     x = self.layers.Conv2D(96//self.factor, (11, 11), 4, padding='same',
                                   bias_initializer=tf.keras.initializers.zeros(),
                                   use_bias=False,
                                   name='conv_1')(x)
-    x = self.layers.BatchNormalization(axis=axis)(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis)(x)
     x = self.layers.Activation('relu')(x)
     x = self.layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
     # Layer 2 - Conv
@@ -81,7 +80,7 @@ class AlexNetQ(GenericModelBuilder):
                                   bias_initializer=tf.keras.initializers.ones(),
                                   use_bias=False,
                                   name='conv_2')(x)
-    x = self.layers.BatchNormalization(axis=axis)(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis)(x)
     x = self.layers.Activation('relu')(x)
     x = self.layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
     # Layer 3 - Conv
@@ -89,21 +88,21 @@ class AlexNetQ(GenericModelBuilder):
                                   bias_initializer=tf.keras.initializers.zeros(),
                                   use_bias=False,
                                   name='conv_3')(x)
-    x = self.layers.BatchNormalization(axis=axis)(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis)(x)
     x = self.layers.Activation('relu')(x)
     # Layer 4 - Conv
     x = self.layers.Conv2D(384//self.factor, (3, 3), padding='same',
                                   bias_initializer=tf.keras.initializers.ones(),
                                   use_bias=False,
                                   name='conv_4')(x)
-    x = self.layers.BatchNormalization(axis=axis)(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis)(x)
     x = self.layers.Activation('relu')(x)
     # Layer 5 - Conv
     x = self.layers.Conv2D(256//self.factor, (3, 3), padding='same',
                                   bias_initializer=tf.keras.initializers.ones(),
                                   use_bias=False,
                                   name='conv_5')(x)
-    x = self.layers.BatchNormalization(axis=axis)(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis)(x)
     x = self.layers.Activation('relu')(x)
     x = self.layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
     # Layer 6 - Fully connected
@@ -112,7 +111,7 @@ class AlexNetQ(GenericModelBuilder):
                                  bias_initializer=tf.keras.initializers.ones(),
                                  use_bias=False,
                                  name='dense_1')(x)
-    x = self.layers.BatchNormalization(axis=axis)(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis)(x)
     x = self.layers.Activation('relu')(x)
     x = self.layers.Dropout(0.5, seed=42)(x)
     # Layer 7 - Fully connected
@@ -126,13 +125,12 @@ class AlexNetQ(GenericModelBuilder):
 
 class AlexNetToy(GenericModelBuilder):
   def model(self, x):
-    axis = 1 if self.is_channels_first else -1
     # This model is a mini version of the AlexNet
     x = self.layers.Conv2D(96//self.factor, (11, 11), 4, padding='valid',
                                   bias_initializer=tf.keras.initializers.zeros(),
                                   use_bias=False,
                                   name='conv_1')(x)
-    x = self.layers.BatchNormalization(axis=axis)(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis)(x)
     x = self.layers.Activation('relu')(x)
     x = self.layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
     # Layer 2 - Conv
@@ -140,7 +138,7 @@ class AlexNetToy(GenericModelBuilder):
                                   bias_initializer=tf.keras.initializers.ones(),
                                   use_bias=False,
                                   name='conv_2')(x)
-    x = self.layers.BatchNormalization(axis=axis)(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis)(x)
     x = self.layers.Activation('relu')(x)
     x = self.layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
     # Layer 3 - Conv
@@ -148,14 +146,14 @@ class AlexNetToy(GenericModelBuilder):
                                   bias_initializer=tf.keras.initializers.zeros(),
                                   use_bias=False,
                                   name='conv_3')(x)
-    x = self.layers.BatchNormalization(axis=axis)(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis)(x)
     x = self.layers.Activation('relu')(x)
     # Layer 4 - Conv
     x = self.layers.Conv2D(128//self.factor, (3, 3), padding='valid',
                                   bias_initializer=tf.keras.initializers.ones(),
                                   use_bias=False,
                                   name='conv_5')(x)
-    x = self.layers.BatchNormalization(axis=axis)(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis)(x)
     x = self.layers.Activation('relu')(x)
     x = self.layers.MaxPooling2D((3, 3), strides=(2, 2))(x)
     # Layer 5 - Fully connected
