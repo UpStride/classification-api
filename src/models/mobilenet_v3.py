@@ -85,7 +85,6 @@ class _MobileNetV3(GenericModelBuilder):
     self.config = config
     self.last_point_ch = last_point_ch
     self.last_block_output_shape = 3
-    self.channel_axis = 1 if self.is_channels_first else -1
 
     self.conv_params = {
         'kernel_regularizer': KERNEL_REGULARIZER,

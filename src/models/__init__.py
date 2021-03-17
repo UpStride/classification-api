@@ -63,14 +63,15 @@ model_name_to_class = {
     # Pdart model
     "PdartsCIFAR": PdartsCIFAR,
     "PdartsImageNet": PdartsImageNet,
-    # Hyper Model
-    "SimpleHyper": SimpleHyper,
-    "ResNetHyper": ResNetHyper,
-    "MobileNetV2Cifar10Hyper": MobileNetV2Cifar10Hyper,
-    # Architecture Search models
-    "FBNet_MobileNetV2Imagenet": FBNet_MobileNetV2Imagenet,
-    "FBNet_MobileNetV2CIFAR": FBNet_MobileNetV2CIFAR,
-    "FBNet_MobileNetV2CIFARUP": FBNet_MobileNetV2CIFARUP,
+    # FIXME Below commented models have stale code and needs refactoring when prioritized.
+    # # Hyper Model
+    # "SimpleHyper": SimpleHyper,
+    # "ResNetHyper": ResNetHyper,
+    # "MobileNetV2Cifar10Hyper": MobileNetV2Cifar10Hyper,
+    # # Architecture Search models
+    # "FBNet_MobileNetV2Imagenet": FBNet_MobileNetV2Imagenet,
+    # "FBNet_MobileNetV2CIFAR": FBNet_MobileNetV2CIFAR,
+    # "FBNet_MobileNetV2CIFARUP": FBNet_MobileNetV2CIFARUP,
     # complexnet
     "ShallowComplexNet": ShallowComplexNet,
     "DeepComplexNet": DeepComplexNet,

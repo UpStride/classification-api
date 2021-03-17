@@ -76,20 +76,19 @@ class NASNet(GenericModelBuilder):
     '''
 
     layers = self.layers
-    channel_dim = 1 if self.backend.image_data_format() == 'channels_first' else -1
 
     with self.backend.name_scope('separable_conv_block_%s' % id):
       x = layers.Activation('relu')(ip)
       x = layers.SeparableConv2D(filters, kernel_size, strides=strides, name='separable_conv_1_%s' % id,
                                  padding='same', use_bias=False, kernel_initializer='he_normal',
                                  kernel_regularizer=l2(weight_decay))(x)
-      x = layers.BatchNormalization(axis=channel_dim, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
+      x = layers.BatchNormalization(axis=self.channel_axis, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
                                     name="separable_conv_1_bn_%s" % (id))(x)
       x = layers.Activation('relu')(x)
       x = layers.SeparableConv2D(filters, kernel_size, name='separable_conv_2_%s' % id,
                                  padding='same', use_bias=False, kernel_initializer='he_normal',
                                  kernel_regularizer=l2(weight_decay))(x)
-      x = layers.BatchNormalization(axis=channel_dim, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
+      x = layers.BatchNormalization(axis=self.channel_axis, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
                                     name="separable_conv_2_bn_%s" % (id))(x)
     return x
 
@@ -110,7 +109,7 @@ class NASNet(GenericModelBuilder):
 
     layers = self.layers
 
-    channel_dim = 1 if self.backend.image_data_format() == 'channels_first' else -1
+    self.channel_axis = 1 if self.backend.image_data_format() == 'channels_first' else -1
     img_dim = 2 if self.backend.image_data_format() == 'channels_first' else -2
 
     if type(ip) == list:
@@ -145,17 +144,17 @@ class NASNet(GenericModelBuilder):
                              kernel_regularizer=l2(weight_decay),
                              name='adjust_conv_2_%s' % id, kernel_initializer='he_normal')(p2)
 
-          p = layers.Concatenate(axis=channel_dim)([p1, p2])
-          p = layers.BatchNormalization(axis=channel_dim, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
+          p = layers.Concatenate(axis=self.channel_axis)([p1, p2])
+          p = layers.BatchNormalization(axis=self.channel_axis, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
                                         name='adjust_bn_%s' % id)(p)
-      elif p_shape[channel_dim] != filters:
+      elif p_shape[self.channel_axis] != filters:
         with self.backend.name_scope('adjust_projection_block_%s' % id):
           p = layers.Activation('relu')(p)
           p = layers.Conv2D(filters, (1, 1), strides=(1, 1), padding='same',
                             name='adjust_conv_projection_%s' % id,
                             use_bias=False, kernel_regularizer=l2(weight_decay),
                             kernel_initializer='he_normal')(p)
-          p = layers.BatchNormalization(axis=channel_dim, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
+          p = layers.BatchNormalization(axis=self.channel_axis, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
                                         name='adjust_bn_%s' % id)(p)
     return p
 
@@ -173,7 +172,7 @@ class NASNet(GenericModelBuilder):
 
     layers = self.layers
 
-    channel_dim = 1 if self.backend.image_data_format() == 'channels_first' else -1
+    self.channel_axis = 1 if self.backend.image_data_format() == 'channels_first' else -1
 
     with self.backend.name_scope('normal_A_block_%s' % id):
       p = self._adjust_block(p, ip, filters, weight_decay, id)
@@ -181,7 +180,7 @@ class NASNet(GenericModelBuilder):
       h = layers.Activation('relu')(ip)
       h = layers.Conv2D(filters, (1, 1), strides=(1, 1), padding='same', name='normal_conv_1_%s' % id,
                         use_bias=False, kernel_initializer='he_normal', kernel_regularizer=l2(weight_decay))(h)
-      h = layers.BatchNormalization(axis=channel_dim, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
+      h = layers.BatchNormalization(axis=self.channel_axis, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
                                     name='normal_bn_1_%s' % id)(h)
 
       with self.backend.name_scope('block_1'):
@@ -209,7 +208,7 @@ class NASNet(GenericModelBuilder):
         x5 = self._separable_conv_block(h, filters, weight_decay=weight_decay, id='normal_left5_%s' % id)
         x5 = layers.Add(name='normal_add_5_%s' % id)([x5, h])
 
-      x = layers.Concatenate(axis=channel_dim, name='normal_concat_%s' % id)([p, x1, x2, x3, x4, x5])
+      x = layers.Concatenate(axis=self.channel_axis, name='normal_concat_%s' % id)([p, x1, x2, x3, x4, x5])
     return x, ip
 
   def _reduction_A(self, ip, p, filters, weight_decay=5e-5, id=None):
@@ -226,7 +225,7 @@ class NASNet(GenericModelBuilder):
     """"""
 
     layers = self.layers
-    channel_dim = 1 if self.backend.image_data_format() == 'channels_first' else -1
+    self.channel_axis = 1 if self.backend.image_data_format() == 'channels_first' else -1
 
     with self.backend.name_scope('reduction_A_block_%s' % id):
       p = self._adjust_block(p, ip, filters, weight_decay, id)
@@ -234,7 +233,7 @@ class NASNet(GenericModelBuilder):
       h = layers.Activation('relu')(ip)
       h = layers.Conv2D(filters, (1, 1), strides=(1, 1), padding='same', name='reduction_conv_1_%s' % id,
                         use_bias=False, kernel_initializer='he_normal', kernel_regularizer=l2(weight_decay))(h)
-      h = layers.BatchNormalization(axis=channel_dim, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
+      h = layers.BatchNormalization(axis=self.channel_axis, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
                                     name='reduction_bn_1_%s' % id)(h)
 
       with self.backend.name_scope('block_1'):
@@ -267,7 +266,7 @@ class NASNet(GenericModelBuilder):
         x5_2 = layers.MaxPooling2D((3, 3), strides=(2, 2), padding='same', name='reduction_right5_%s' % id)(h)
         x5 = layers.Add(name='reduction_add4_%s' % id)([x5_1, x5_2])
 
-      x = layers.Concatenate(axis=channel_dim, name='reduction_concat_%s' % id)([x2, x3, x4, x5])
+      x = layers.Concatenate(axis=self.channel_axis, name='reduction_concat_%s' % id)([x2, x3, x4, x5])
       return x, ip
 
   def _add_auxiliary_head(self, x, classes, weight_decay, pooling, include_top):
@@ -396,28 +395,13 @@ class NASNet(GenericModelBuilder):
 
     layers = self.layers
 
-    if self.backend.image_data_format() != 'channels_last':
-      warnings.warn('The NASNet family of models is only available '
-                    'for the input data format "channels_last" '
-                    '(width, height, channels). '
-                    'However your settings specify the default '
-                    'data format "channels_first" (channels, width, height).'
-                    ' You should set `image_data_format="channels_last"` '
-                    'in your Keras config located at ~/.keras/keras.json. '
-                    'The model being returned right now will expect inputs '
-                    'to follow the "channels_last" data format.')
-      self.backend.set_image_data_format('channels_last')
-      old_data_format = 'channels_first'
-    else:
-      old_data_format = None
-
     assert self.penultimate_filters % 24 == 0, "`penultimate_filters` needs to be divisible " \
         "by 24."
 
     penultimate_filters = self.penultimate_filters // self.factor
     stem_filters = self.stem_filters // self.factor
 
-    channel_dim = 1 if self.backend.image_data_format() == 'channels_first' else -1
+    self.channel_axis = 1 if self.backend.image_data_format() == 'channels_first' else -1
     filters = penultimate_filters // 24
 
     # Avoid odd number of filters to escape dimension mismatch
@@ -431,7 +415,7 @@ class NASNet(GenericModelBuilder):
       x = layers.Conv2D(stem_filters, (3, 3), strides=(1, 1), padding='same', use_bias=False, name='stem_conv1',
                              kernel_initializer='he_normal', kernel_regularizer=l2(self.weight_decay))(x)
 
-    x = layers.BatchNormalization(axis=channel_dim, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
+    x = layers.BatchNormalization(axis=self.channel_axis, momentum=self._BN_DECAY, epsilon=self._BN_EPSILON,
                                        name='stem_bn1')(x)
 
     p = None
@@ -452,13 +436,13 @@ class NASNet(GenericModelBuilder):
     auxiliary_x = None
     if not self.initial_reduction:  # imagenet / mobile mode
       if self.use_auxiliary_branch:
-        auxiliary_x = self._add_auxiliary_head(x, self.label_dim, self.weight_decay, self.pooling, self.include_top)
+        auxiliary_x = self._add_auxiliary_head(x, self.num_classes, self.weight_decay, self.pooling, self.include_top)
 
     x, p0 = self._reduction_A(x, p, filters * self.filters_multiplier ** 2, self.weight_decay, id='reduce_%d' % (2 * self.nb_blocks))
 
     if self.initial_reduction:  # CIFAR mode
       if self.use_auxiliary_branch:
-        auxiliary_x = self._add_auxiliary_head(x, self.label_dim, self.weight_decay, self.pooling, self.include_top)
+        auxiliary_x = self._add_auxiliary_head(x, self.num_classes, self.weight_decay, self.pooling, self.include_top)
 
     p = p0 if not self.skip_reduction_layer_input else p
 
@@ -470,7 +454,7 @@ class NASNet(GenericModelBuilder):
     if self.include_top:
       x = layers.GlobalAveragePooling2D()(x)
       x = layers.Dropout(self.dropout)(x)
-      x = layers.Dense(self.label_dim, kernel_regularizer=l2(self.weight_decay), name='logit')(x)
+      x = layers.Dense(self.num_classes, kernel_regularizer=l2(self.weight_decay), name='logit')(x)
     else:
       if self.pooling == 'avg':
         x = layers.GlobalAveragePooling2D()(x)
@@ -481,8 +465,6 @@ class NASNet(GenericModelBuilder):
     if self.use_auxiliary_branch:
       self.auxiliary_x = auxiliary_x
 
-    if old_data_format:
-      self.backend.set_image_data_format(old_data_format)
     return x
 
 

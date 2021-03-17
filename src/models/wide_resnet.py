@@ -42,7 +42,7 @@ class WideResNet(GenericModelBuilder):
     orig_x = self._conform_size(filters[0], filters[-1],final_stride_val, first_x, 'last_block')
     x = layers.Add()([x, orig_x])
 
-    x = layers.BatchNormalization(name='batch_norm_last')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name='batch_norm_last')(x)
     x = layers.Activation('relu', name='relu_last')(x)
     x = layers.GlobalAveragePooling2D()(x)
     return x
@@ -52,17 +52,17 @@ class WideResNet(GenericModelBuilder):
     layers = self.layers
     weight_regularizer = self.weight_regularizer
     if activate_before_residual:
-      x = layers.BatchNormalization(name=block_name + '/batch_norm_0')(x)
+      x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_0')(x)
       x = layers.Activation('relu', name=block_name + '/relu_0')(x)
       x_init = x
     else:
       x_init = x
-      x = layers.BatchNormalization(name=block_name + '/batch_norm_0')(x)
+      x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_0')(x)
       x = layers.Activation('relu', name=block_name + '/relu_0')(x)
 
     x = layers.Conv2D(out_filter, 3, stride, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                              use_bias=use_bias, padding='same', name=block_name + '/conv_0')(x)
-    x = layers.BatchNormalization(name=block_name + '/batch_norm_1')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_1')(x)
     x = layers.Activation('relu', name=block_name + '/relu_1')(x)
     x = layers.Conv2D(out_filter, 3, 1, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                            use_bias=use_bias, padding='same', name=block_name + '/conv_1')(x)

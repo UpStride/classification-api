@@ -9,7 +9,6 @@ class ResNet(GenericModelBuilder):
   def __init__(self, res_n, *args, **kwargs):
     super(ResNet, self).__init__(*args, **kwargs)
     self.res_n = res_n
-    self.nb_axis = 1 if self.is_channels_first else -1
 
   def get_residual_layer(self):
     n_to_residual = {
@@ -57,7 +56,7 @@ class ResNet(GenericModelBuilder):
     for i in range(1, residual_list[3]):
       x = residual_block(x, channels=int(ch/self.factor) * 8, downsample=False, block_name='resblock_3_' + str(i))
     # block 4
-    x = self.layers.BatchNormalization(axis=self.nb_axis, name='batch_norm_last')(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis, name='batch_norm_last')(x)
     x = self.layers.Activation('relu', name='relu_last')(x)
     x = self.layers.GlobalAveragePooling2D()(x)
     return x
@@ -66,7 +65,7 @@ class ResNet(GenericModelBuilder):
     layers = self.layers
     weight_regularizer = self.weight_regularizer
     x_init = x
-    x = layers.BatchNormalization(axis=self.nb_axis, name=block_name + '/batch_norm_0')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_0')(x)
     x = layers.Activation('relu', name=block_name + '/relu_0')(x)
     if downsample:
       x = layers.Conv2D(channels, 3, 2, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
@@ -76,7 +75,7 @@ class ResNet(GenericModelBuilder):
     else:
       x = layers.Conv2D(channels, 3, 1, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                         use_bias=False, padding='same', name=block_name + '/conv_0')(x)
-    x = layers.BatchNormalization(axis=self.nb_axis, name=block_name + '/batch_norm_1')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_1')(x)
     x = layers.Activation('relu', name=block_name + '/relu_1')(x)
     x = layers.Conv2D(channels, 3, 1, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                       use_bias=False, padding='same', name=block_name + '/conv_1')(x)
@@ -86,11 +85,11 @@ class ResNet(GenericModelBuilder):
   def bottle_resblock(self, x, channels, use_bias=True, downsample=False, block_name='bottle_resblock'):
     layers = self.layers
     weight_regularizer = self.weight_regularizer
-    x = layers.BatchNormalization(axis=self.nb_axis, name=block_name + '/batch_norm_1x1_front')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_1x1_front')(x)
     shortcut = layers.Activation('relu', name=block_name + '/relu_1x1_front')(x)
     x = layers.Conv2D(channels, 1, 1, 'same', kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                       use_bias=False, name=block_name + '/conv_1x1_front')(shortcut)
-    x = layers.BatchNormalization(axis=self.nb_axis, name=block_name + '/batch_norm_3x3')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_3x3')(x)
     x = layers.Activation('relu', name=block_name + '/relu_3x3')(x)
     if downsample:
       x = layers.Conv2D(channels, 3, 2, 'same', kernel_initializer=weight_init,
@@ -102,7 +101,7 @@ class ResNet(GenericModelBuilder):
                         kernel_regularizer=weight_regularizer, use_bias=False, name=block_name + '/conv_0')(x)
       shortcut = layers.Conv2D(channels * 4, 1, 1, 'same', kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                                use_bias=False, name=block_name + '/conv_init')(shortcut)
-    x = layers.BatchNormalization(axis=self.nb_axis, name=block_name + '/batch_norm_1x1_back')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_1x1_back')(x)
     x = layers.Activation('relu', name=block_name + '/relu_1x1_back')(x)
     x = layers.Conv2D(channels * 4, 1, 1, 'same', kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                       use_bias=False, name=block_name + '/conv_1x1_back')(x)
@@ -144,7 +143,6 @@ class ResNetCIFAR(GenericModelBuilder):
   def __init__(self, res_n, *args, **kwargs):
     super(ResNetCIFAR, self).__init__(*args, **kwargs)
     self.res_n = res_n
-    self.nb_axis = 1 if self.is_channels_first else -1
 
   def get_residual_layer(self):
     n_to_residual = {
@@ -174,7 +172,7 @@ class ResNetCIFAR(GenericModelBuilder):
     for i in range(1, residual_list[2]):
       x = self.resblock_cifar(x, channels=int(ch/self.factor) * 4, stride=1, downsample=False, block_name='resblock2_' + str(i))
     # block 4
-    x = self.layers.BatchNormalization(axis=self.nb_axis, name='batch_norm_last')(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis, name='batch_norm_last')(x)
     x = self.layers.Activation('relu', name='relu_last')(x)
     x = self.layers.GlobalAveragePooling2D()(x)
     return x
@@ -183,14 +181,14 @@ class ResNetCIFAR(GenericModelBuilder):
     layers = self.layers
     weight_regularizer = self.weight_regularizer
     x_init = x
-    x = layers.BatchNormalization(axis=self.nb_axis, name=block_name + '/batch_norm_0')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_0')(x)
     x = layers.Activation('relu', name=block_name + '/relu_0')(x)
     if downsample:
       x_init = layers.Conv2D(channels, 3, 2, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                              use_bias=use_bias, padding='same', name=block_name + '/conv_init')(x_init)
     x = layers.Conv2D(channels, 3, strides=stride, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                       use_bias=False, padding='same', name=block_name + '/conv_0')(x)
-    x = layers.BatchNormalization(axis=self.nb_axis, name=block_name + '/batch_norm_1')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_1')(x)
     x = layers.Activation('relu', name=block_name + '/relu_1')(x)
     x = layers.Conv2D(channels, 3, 1, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                       use_bias=False, padding='same', name=block_name + '/conv_1')(x)

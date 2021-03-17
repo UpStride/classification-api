@@ -19,7 +19,7 @@ sys.path.append('ressources')
 
 from scripts.test_tfrecord_writer import TestTfrecordWriter
 from tests.unit_tests.test_compare_dataloader import TestCompareDataLoader
-
+from tests.unit_tests.test_channels_first_last import TestCompareChannelsFirstLast
 
 if __name__ == "__main__":
   unittest.main()

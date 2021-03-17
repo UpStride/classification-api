@@ -36,6 +36,7 @@ class GenericModelBuilder:
     self.tf2upstride_strategy = tf2upstride_strategy
     self.upstride2tf_strategy = upstride2tf_strategy
     self.is_channels_first = True if tf.keras.backend.image_data_format() == 'channels_first' else False
+    self.channel_axis = 1 if self.is_channels_first else -1
     
     # Configure list of ids to change framework
     if upstride_type == -1:

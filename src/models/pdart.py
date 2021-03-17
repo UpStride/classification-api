@@ -327,20 +327,26 @@ class NetworkImageNet(DataFormatHandler):
 
 class PdartsImageNet(GenericModelBuilder):
   def __init__(self, *args, **kwargs):
-    define_drop_path_prob(kwargs['args']['drop_path_prob'])
+    # define_drop_path_prob(kwargs['args']['drop_path_prob'])
     super().__init__(*args, **kwargs)
     self.c = 48  # number of channels at the beginning of the network
     self.genotype = eval("PDARTS")
     self.n_layers = 14
-    self._auxiliary = False
+    self._auxiliary = True
 
   def model(self, x):
-    x = self.layers.Identity()(x)  # This op is needed so Upstride can insert its custom op
-    input = x
+    self.model_class = PDartsModel
+
+    # model build
+    drop_path_prob = tf.keras.layers.Input([])
+    self.inputs.append(drop_path_prob)
+
+    # Stem
+    self.axis = 1 if self.is_channels_first else -1 
 
     # Stem 0
     layers = self.layers
-    x = layers.Conv2D(self.c // 2, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(input)
+    x = layers.Conv2D(self.c // 2, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(x)
     x = layers.BatchNormalization(axis=self.axis)(x)
     x = layers.ReLU()(x)
     x = layers.Conv2D(self.c, kernel_size=3, strides=2, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(x)
@@ -360,16 +366,15 @@ class PdartsImageNet(GenericModelBuilder):
         reduction = True
       else:
         reduction = False
-      cell = Cell(self.layers, self.genotype, C_curr, reduction, reduction_prev)
-      s0, s1 = s1, cell(s0, s1, drop_path_prob)
+      s0, s1 = s1, Cell(self.layers, self.genotype, C_curr, reduction, reduction_prev)([s0, s1, drop_path_prob])
 
       reduction_prev = reduction
-      if i == 2 * self.n_layers // 3 and self._auxiliary and self.train:
+      if i == 2 * self.n_layers // 3 and self._auxiliary:
         self.logits_aux = self.auxiliary_head(self.layers, s1)
 
     x = self.layers.AveragePooling2D(7)(s1)
     x = layers.Flatten()(x)
-    return x, logits_aux
+    return [x, self.logits_aux]
 
   def auxiliary_head(self, layers, input_tensor):
     """assuming input size 14x14"""
@@ -403,7 +408,7 @@ class PdartsCIFAR(GenericModelBuilder):
     drop_path_prob = tf.keras.layers.Input([])
     self.inputs.append(drop_path_prob)
     # Stem
-    self.axis = -1  # TODO correct for channel first
+    self.axis = 1 if self.is_channels_first else -1 
 
     layers = self.layers
     x = layers.Conv2D(self.c * 3, kernel_size=3, padding='SAME', kernel_initializer='he_uniform', use_bias=False)(x)
