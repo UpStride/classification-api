@@ -1,8 +1,10 @@
+import sys
 import unittest
+
+from tqdm import tqdm
 
 import tensorflow as tf
 from src.models import model_name_to_class
-from tqdm import tqdm
 
 class TestCompareChannelsFirstLast(unittest.TestCase):
   @classmethod
@@ -61,24 +63,29 @@ class TestCompareChannelsFirstLast(unittest.TestCase):
       self.assertEqual(model_NHWC_params, model_NCHW_params)
 
   def test_compare_model_params_upstride(self):
-    for up_type in [1, 2]: 
-      self.model_kwargs.update({"upstride_type": up_type, "factor": 2**up_type}) 
-      print(f"Building models for Channels_first and Channels_last for Upstride type{up_type} and Compare") 
-      for model in tqdm(self.list_models_upstride):
-        # switch to channels first
-        tf.keras.backend.set_image_data_format('channels_first')
-        model_NCHW = model(**self.model_kwargs).build()
-        model_NCHW_params = model_NCHW.count_params()
-        del model_NCHW
-        tf.keras.backend.clear_session()
-        # switch back to channels last
-        tf.keras.backend.set_image_data_format('channels_last')
-        model_NHWC = model(**self.model_kwargs).build()
-        model_NHWC_params = model_NHWC.count_params()
-        del model_NHWC
-        tf.keras.backend.clear_session()
-        # compare
-        # print(f"Model Name    : {model.__name__} UpStride type{up_type}")
-        # print(f"Channels_last : {model_NHWC_params:,}")
-        # print(f"Channels_first: {model_NCHW_params:,}") 
-        self.assertEqual(model_NHWC_params, model_NCHW_params)
+    # try to import upstride module
+    try:
+      import upstride
+      for up_type in [1, 2]: 
+        self.model_kwargs.update({"upstride_type": up_type, "factor": 2**up_type}) 
+        print(f"Building models for Channels_first and Channels_last for Upstride type{up_type} and Compare") 
+        for model in tqdm(self.list_models_upstride):
+          # switch to channels first
+          tf.keras.backend.set_image_data_format('channels_first')
+          model_NCHW = model(**self.model_kwargs).build()
+          model_NCHW_params = model_NCHW.count_params()
+          del model_NCHW
+          tf.keras.backend.clear_session()
+          # switch back to channels last
+          tf.keras.backend.set_image_data_format('channels_last')
+          model_NHWC = model(**self.model_kwargs).build()
+          model_NHWC_params = model_NHWC.count_params()
+          del model_NHWC
+          tf.keras.backend.clear_session()
+          # compare
+          # print(f"Model Name    : {model.__name__} UpStride type{up_type}")
+          # print(f"Channels_last : {model_NHWC_params:,}")
+          # print(f"Channels_first: {model_NCHW_params:,}") 
+          self.assertEqual(model_NHWC_params, model_NCHW_params)
+    except ModuleNotFoundError:
+      print("Unit test test_compare_model_params_upstride skipped as upstride is required for this test")
