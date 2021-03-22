@@ -5,18 +5,12 @@ from .generic_model import GenericModelBuilder
 
 weight_init = tf.keras.initializers.VarianceScaling()
 
-is_channel_fist = False
-
 
 class WideResNet(GenericModelBuilder):
   def __init__(self, *args, **kwargs):
     super(WideResNet, self).__init__(*args, **kwargs)
 
   def model(self, x):
-    if is_channel_fist:
-      x = tf.transpose(x, [0, 3, 1, 2])
-      tf.keras.backend.set_image_data_format('channels_first')
-
     layers = self.layers
     weight_regularizer = self.weight_regularizer
     num_blocks_per_resnet = self.blocks_per_group
@@ -48,7 +42,7 @@ class WideResNet(GenericModelBuilder):
     orig_x = self._conform_size(filters[0], filters[-1],final_stride_val, first_x, 'last_block')
     x = layers.Add()([x, orig_x])
 
-    x = layers.BatchNormalization(name='batch_norm_last')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name='batch_norm_last')(x)
     x = layers.Activation('relu', name='relu_last')(x)
     x = layers.GlobalAveragePooling2D()(x)
     return x
@@ -58,17 +52,17 @@ class WideResNet(GenericModelBuilder):
     layers = self.layers
     weight_regularizer = self.weight_regularizer
     if activate_before_residual:
-      x = layers.BatchNormalization(name=block_name + '/batch_norm_0')(x)
+      x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_0')(x)
       x = layers.Activation('relu', name=block_name + '/relu_0')(x)
       x_init = x
     else:
       x_init = x
-      x = layers.BatchNormalization(name=block_name + '/batch_norm_0')(x)
+      x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_0')(x)
       x = layers.Activation('relu', name=block_name + '/relu_0')(x)
 
     x = layers.Conv2D(out_filter, 3, stride, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                              use_bias=use_bias, padding='same', name=block_name + '/conv_0')(x)
-    x = layers.BatchNormalization(name=block_name + '/batch_norm_1')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=block_name + '/batch_norm_1')(x)
     x = layers.Activation('relu', name=block_name + '/relu_1')(x)
     x = layers.Conv2D(out_filter, 3, 1, kernel_initializer=weight_init, kernel_regularizer=weight_regularizer,
                            use_bias=use_bias, padding='same', name=block_name + '/conv_1')(x)
@@ -82,7 +76,7 @@ class WideResNet(GenericModelBuilder):
     if in_filter != out_filter:
       x_init = layers.AveragePooling2D(pool_size=(stride, stride), name=block_name + '/avg_pool_0')(x_init)
       # hack to pad the channels
-      if is_channel_fist:
+      if self.is_channels_first:
         x_init = tf.transpose(x_init, [0, 2, 3, 1]) # put the channels at index 3
         x_init = layers.ZeroPadding2D(padding=(0,(out_filter-in_filter)//2), name=block_name + '/zero_pad_0')(x_init)
         x_init = tf.transpose(x_init, [0, 3, 1, 2]) # put the channels back at index 1

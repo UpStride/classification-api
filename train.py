@@ -29,6 +29,7 @@ arguments = [
         [str, "name", '', 'Specify the name of the model', lambda x: x in model_name_to_class],
         [float, "drop_path_prob", 0.3, 'drop path probability'],
         [int, "num_classes", 0, 'Number of classes', lambda x: x > 0],  # TODO this number should be computed from dataset
+        [bool, "channels_first", False, 'Start training with channels first'],
         ['namespace', 'conversion_params', [
             # [bool, 'output_layer_before_up2tf', False, 'Whether to use final output layer before UpStride2TF conversion or not'],
             [str, 'tf2up_strategy', '', 'TF2UpStride conversion strategy'],
@@ -81,6 +82,7 @@ def get_experiment_name(params):
   framework = 'tensorflow' if upstride_type == -1 else f'upstride_{upstride_type}'
 
   experiment_dir = f"{args_model['name']}_{framework}_factor{args_model['factor']}"
+  experiment_dir += "_NCHW" if args_model['channels_first'] else "_NHWC"
   if params['config']['mixed_precision']:
     experiment_dir += "_mp"
   return experiment_dir
@@ -104,6 +106,8 @@ def train(config):
   global_conf.config_tf2(config['config'])
   global_conf.setup_mp(config['config'])
   ds_strategy = global_conf.setup_strategy(config['config']['strategy'])
+  if config['model']['channels_first']:  # if True set keras backend to channels_first
+    tf.keras.backend.set_image_data_format('channels_first')
 
   # 2
   train_dataset = dataloader.get_dataset(config['dataloader'], transformation_list=config['dataloader']['train_list'],

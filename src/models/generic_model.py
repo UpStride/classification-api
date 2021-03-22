@@ -35,7 +35,9 @@ class GenericModelBuilder:
     self.upstride_type = upstride_type
     self.tf2upstride_strategy = tf2upstride_strategy
     self.upstride2tf_strategy = upstride2tf_strategy
-
+    self.is_channels_first = True if tf.keras.backend.image_data_format() == 'channels_first' else False
+    self.channel_axis = 1 if self.is_channels_first else -1
+    
     # Configure list of ids to change framework
     if upstride_type == -1:
       # then no switch between tf and upstride
@@ -117,6 +119,8 @@ class GenericModelBuilder:
   def build(self):
     inputs = tf.keras.layers.Input(shape=self.input_size)
     self.inputs.append(inputs)
+    if self.is_channels_first: 
+      inputs = tf.keras.layers.Lambda(lambda x: tf.transpose(x, [0, 3, 1, 2]),name='channels_first')(inputs)
     x = self.change_framework_if_necessary("beginning", inputs)
     # output_tensors is the list of the vectors to use to compute classification losses (main output + auxilary losses)
     output_tensors = self.model(x)

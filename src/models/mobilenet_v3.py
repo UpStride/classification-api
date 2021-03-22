@@ -46,7 +46,7 @@ def _make_divisible(v, divisor=8, min_value=None):
   return new_v
 
 
-def correct_pad(inputs, kernel_size, is_channel_fist):
+def correct_pad(inputs, kernel_size, is_channels_first):
   """Returns a tuple for zero-padding for 2D convolution with downsampling.
   Args:
       input_size: An integer or tuple/list of 2 integers.
@@ -56,7 +56,7 @@ def correct_pad(inputs, kernel_size, is_channel_fist):
   """
   if type(inputs) == list:
     inputs = inputs[0]
-  input_size = inputs.shape[2:4] if is_channel_fist else inputs.shape[1:3]
+  input_size = inputs.shape[2:4] if is_channels_first else inputs.shape[1:3]
   if isinstance(kernel_size, int):
     kernel_size = (kernel_size, kernel_size)
   adjust = (1, 1) if input_size[0] is None else (1 - input_size[0] % 2, 1 - input_size[1] % 2)
@@ -85,8 +85,6 @@ class _MobileNetV3(GenericModelBuilder):
     self.config = config
     self.last_point_ch = last_point_ch
     self.last_block_output_shape = 3
-    self.is_channel_fist = tf.keras.backend.image_data_format() == 'channels_first'
-    self.channel_axis = 1 if self.is_channel_fist else -1
 
     self.conv_params = {
         'kernel_regularizer': KERNEL_REGULARIZER,
@@ -121,7 +119,7 @@ class _MobileNetV3(GenericModelBuilder):
       x = self.layers.BatchNormalization(name=prefix + 'expand/BatchNorm', **self.bn_params)(x)
       x = self.layers.Activation(activation_fn, name=prefix + '1a_' + activation_fn.__name__)(x)
     if stride == 2:
-      x = self.layers.ZeroPadding2D(padding=correct_pad(x, kernel_size, self.is_channel_fist), name=prefix + 'depthwise/pad')(x)
+      x = self.layers.ZeroPadding2D(padding=correct_pad(x, kernel_size, self.is_channels_first), name=prefix + 'depthwise/pad')(x)
     x = self.layers.DepthwiseConv2D(kernel_size, name=prefix + 'depthwise', **depthwise_params)(x)
     x = self.layers.BatchNormalization(name=prefix + 'depthwise/BatchNorm', **self.bn_params)(x)
     x = self.layers.Activation(activation_fn, name=prefix + activation_fn.__name__)(x)
@@ -146,6 +144,13 @@ class _MobileNetV3(GenericModelBuilder):
     x = layers.ReLU(name=prefix + 'squeeze_excite/Relu')(x)
     x = layers.Dense(filters, kernel_regularizer=KERNEL_REGULARIZER, name=prefix + 'squeeze_excite/Dense_1')(x)
     x = layers.Activation(hard_sigmoid, name=prefix + 'squeeze_excite/Hard_Sigmoid')(x)
+    if self.is_channels_first:
+      # if we are channel first, then
+      # inputs_seblock = (None, 96, 14, 14)
+      # x = (None, 96)
+      # we need to add 2 dimensions at the end of x so tf can perform the multiplication
+      x = tf.expand_dims(x, axis=-1)
+      x = tf.expand_dims(x, axis=-1)
     x = layers.Multiply(name=prefix + 'squeeze_excite/Mul')([inputs_seblock, x])
     return x
 

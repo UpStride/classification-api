@@ -4,8 +4,9 @@ from .generic_model import GenericModelBuilder
 
 class ComplexNet(GenericModelBuilder):
   def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
     self.bn_args = {
-        "axis": -1,
+        "axis": self.channel_axis,
         "momentum": 0.9,
         "epsilon": 1e-04
     }
@@ -14,7 +15,6 @@ class ComplexNet(GenericModelBuilder):
         "use_bias": False,
         "kernel_regularizer": tf.keras.regularizers.l2(l=0.0001),
     }
-    super().__init__(*args, **kwargs)
 
   def residual_block(self, x, channels: int, downsample=False):
     layers = self.layers
@@ -30,7 +30,7 @@ class ComplexNet(GenericModelBuilder):
       x = layers.Add()([x, x_init])
     else:
       x_init = layers.Conv2D(channels, 1, 2, **self.conv_args)(x_init)
-      x = layers.Concatenate()([x_init, x])
+      x = layers.Concatenate(axis=self.channel_axis)([x_init, x])
     return x
 
   def learnVectorBlock(self, x):
@@ -49,7 +49,7 @@ class ComplexNet(GenericModelBuilder):
       print("real definition")
       r = x
       x = self.learnVectorBlock(x)
-      x = tf.keras.layers.Concatenate()([r, x])
+      x = tf.keras.layers.Concatenate(axis=self.channel_axis)([r, x])
       self.conv_args['kernel_initializer'] = 'he_normal'
 
     x = self.layers.Conv2D(n_channels, 3, **self.conv_args)(x)
@@ -71,6 +71,8 @@ class ComplexNet(GenericModelBuilder):
       x = self.residual_block(x, n_channels * 4)
 
     x = self.layers.GlobalAveragePooling2D()(x)
+
+    return x
 
 
 # Definition from the Quaternion Paper
