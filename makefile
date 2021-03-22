@@ -19,3 +19,4 @@ run_tensorflow:
 		-v ~/.keras/datasets:/root/.keras/datasets \
 		upstride/classification_api:tensorflow-2.0 \
 		bash
+		
