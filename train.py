@@ -145,18 +145,18 @@ def train(config):
     callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: callback_epoch(epoch, config['num_epochs'], config['drop_path_prob'])))
 
   # 6 training
-  # model.fit(x=train_dataset,
-  #           validation_data=val_dataset,
-  #           epochs=config['num_epochs'],
-  #           callbacks=callbacks,
-  #           max_queue_size=16,
-  #           initial_epoch=latest_epoch
-  #           )
+  model.fit(x=train_dataset,
+            validation_data=val_dataset,
+            epochs=config['num_epochs'],
+            callbacks=callbacks,
+            max_queue_size=16,
+            initial_epoch=latest_epoch
+            )
 
-  # # 7 training
-  # print("export model")
-  # export.export(model, export_dir, config)
-  # print("Training Completed!!")
+  # 7 training
+  print("export model")
+  export.export(model, export_dir, config)
+  print("Training Completed!!")
 
 
 if __name__ == '__main__':
