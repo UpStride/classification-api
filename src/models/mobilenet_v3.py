@@ -29,13 +29,14 @@ with  batch  size  4096  (128  images  per  chip),  andlearning  rate  decay  ra
 every  3  epochs.   We  use dropout of 0.8, and l2 weight decay 1e-5 and the same image preprocessing as Inception [42].
 Finally we use expo-nential moving average with decay 0.9999. '''
 
-import tensorflow as tf 
-from .generic_model import GenericModel
 
-BATCH_NORM_MOMEMTUM = 0.9 
-KERNEL_REGULARIZER = tf.keras.regularizers.l2(l2=1e-3) 
+from .generic_model import GenericModelBuilder
+import tensorflow as tf
+BATCH_NORM_MOMEMTUM = 0.9
+KERNEL_REGULARIZER = tf.keras.regularizers.l2(l2=1e-3)
 
-def _make_divisble(v, divisor=8, min_value=None):
+
+def _make_divisible(v, divisor=8, min_value=None):
   if min_value is None:
     min_value = divisor
   new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
@@ -44,7 +45,8 @@ def _make_divisble(v, divisor=8, min_value=None):
     new_v += divisor
   return new_v
 
-def correct_pad(inputs, kernel_size):
+
+def correct_pad(inputs, kernel_size, is_channels_first):
   """Returns a tuple for zero-padding for 2D convolution with downsampling.
   Args:
       input_size: An integer or tuple/list of 2 integers.
@@ -52,201 +54,148 @@ def correct_pad(inputs, kernel_size):
   Returns:
       A tuple.
   """
-  img_dim = 1
   if type(inputs) == list:
     inputs = inputs[0]
-  is_channel_first = False
-  if is_channel_first: # TODO If and else are the same. investigate this.
-    input_size = tf.keras.backend.int_shape(inputs)[img_dim+1:(img_dim + 3)]
-  else:
-    input_size = tf.keras.backend.int_shape(inputs)[img_dim+1:(img_dim + 3)]
-
+  input_size = inputs.shape[2:4] if is_channels_first else inputs.shape[1:3]
   if isinstance(kernel_size, int):
     kernel_size = (kernel_size, kernel_size)
-
-  if input_size[0] is None:
-    adjust = (1, 1)
-  else:
-    adjust = (1 - input_size[0] % 2, 1 - input_size[1] % 2)
-
+  adjust = (1, 1) if input_size[0] is None else (1 - input_size[0] % 2, 1 - input_size[1] % 2)
   correct = (kernel_size[0] // 2, kernel_size[1] // 2)
+  return ((correct[0] - adjust[0], correct[0]), (correct[1] - adjust[1], correct[1]))
 
-  return ((correct[0] - adjust[0], correct[0]),
-          (correct[1] - adjust[1], correct[1]))
 
 def relu(x):
   return tf.nn.relu(x)
 
+
 def hard_sigmoid(x):
   return tf.nn.relu6(x + 3.) / 6.
 
+
 def hard_swish(x):
-  return x * hard_sigmoid(x) 
+  return x * hard_sigmoid(x)
 
-class _MobileNetV3(GenericModel):
-  def __init__(self, *args, **kwargs):
-    self.last_block_output_shape = 3
-    self.channel_axis = 1 if tf.keras.backend.image_data_format() == 'channels_first' else -1
+
+class _MobileNetV3(GenericModelBuilder):
+  def __init__(self, alpha, dropout_rate, first_conv_stride, config, last_point_ch, *args, **kwargs):
     super().__init__(*args, **kwargs)
+    self.alpha = alpha
+    self.dropout_rate = dropout_rate
+    self.first_conv_stride = first_conv_stride
+    self.config = config
+    self.last_point_ch = last_point_ch
+    self.last_block_output_shape = 3
 
-  def _inverted_res_block(self, expansion, filters, kernel_size, stride, se_ratio,
-                          activation_fn, block_id):
-    layers = self.layers()  # we don't want to switch between tf and upstride in this block
-    inputs = self.x
+    self.conv_params = {
+        'kernel_regularizer': KERNEL_REGULARIZER,
+        'padding': 'same',
+        'use_bias': False
+    }
+
+    self.bn_params = {
+        'axis': self.channel_axis,
+        'epsilon': 1e-3,
+        'momentum': BATCH_NORM_MOMEMTUM,
+    }
+
+  def _inverted_res_block(self, x, expansion, filters, kernel_size, stride, se_ratio, activation_fn, block_id):
+    inputs = x
     prefix = 'expanded_conv/'
-    infilters = self.last_block_output_shape 
+    infilters = self.last_block_output_shape
+
+    conv_filter = _make_divisible(infilters * expansion)
+
+    depthwise_params = {
+        'depthwise_regularizer': KERNEL_REGULARIZER,
+        'strides': stride,
+        'padding': 'same' if stride == 1 else 'valid',
+        'use_bias': False,
+    }
+
     if block_id:
       # Expand
       prefix = 'expanded_conv_{}/'.format(block_id)
-      self.x = layers.Conv2D(
-          _make_divisble(infilters * expansion),
-          kernel_size=1,
-          kernel_regularizer=KERNEL_REGULARIZER,
-          padding='same',
-          use_bias=False,
-          name=prefix + 'expand')(
-              self.x)
-      self.x = layers.BatchNormalization(
-          axis=self.channel_axis,
-          epsilon=1e-3,
-          momentum=BATCH_NORM_MOMEMTUM,
-          name=prefix + 'expand/BatchNorm')(
-              self.x)
-      self.x = layers.Activation(activation_fn, name=prefix + '1a_' + activation_fn.__name__)(self.x)
+      x = self.layers.Conv2D(conv_filter, kernel_size=1, name=prefix + 'expand', **self.conv_params)(x)
+      x = self.layers.BatchNormalization(name=prefix + 'expand/BatchNorm', **self.bn_params)(x)
+      x = self.layers.Activation(activation_fn, name=prefix + '1a_' + activation_fn.__name__)(x)
     if stride == 2:
-      self.x = layers.ZeroPadding2D(
-          padding=correct_pad(self.x, kernel_size),
-          name=prefix + 'depthwise/pad')(
-              self.x)
-    self.x = layers.DepthwiseConv2D(
-        kernel_size,
-        kernel_regularizer=KERNEL_REGULARIZER,
-        strides=stride,
-        padding='same' if stride == 1 else 'valid',
-        use_bias=False,
-        name=prefix + 'depthwise')(
-            self.x)
-    self.x = layers.BatchNormalization(
-        axis=self.channel_axis,
-        epsilon=1e-3,
-        momentum=BATCH_NORM_MOMEMTUM,
-        name=prefix + 'depthwise/BatchNorm')(
-            self.x)
-    self.x = layers.Activation(activation_fn, name=prefix + activation_fn.__name__)(self.x)
+      x = self.layers.ZeroPadding2D(padding=correct_pad(x, kernel_size, self.is_channels_first), name=prefix + 'depthwise/pad')(x)
+    x = self.layers.DepthwiseConv2D(kernel_size, name=prefix + 'depthwise', **depthwise_params)(x)
+    x = self.layers.BatchNormalization(name=prefix + 'depthwise/BatchNorm', **self.bn_params)(x)
+    x = self.layers.Activation(activation_fn, name=prefix + activation_fn.__name__)(x)
 
     if se_ratio:
-      self._se_block(_make_divisble(infilters * expansion), se_ratio, prefix)
+      x = self._se_block(x, conv_filter, se_ratio, prefix)
 
-    self.x = layers.Conv2D(
-        filters,
-        kernel_size=1,
-        kernel_regularizer=KERNEL_REGULARIZER,
-        padding='same',
-        use_bias=False,
-        name=prefix + 'project')(
-            self.x)
-    self.x = layers.BatchNormalization(
-        axis=self.channel_axis,
-        epsilon=1e-3,
-        momentum=BATCH_NORM_MOMEMTUM,
-        name=prefix + 'project/BatchNorm')(
-            self.x)
+    x = self.layers.Conv2D(filters, kernel_size=1, name=prefix + 'project', **self.conv_params)(x)
+    x = self.layers.BatchNormalization(name=prefix + 'project/BatchNorm', **self.bn_params)(x)
 
     if stride == 1 and infilters == filters:
-      self.x = layers.Add(name=prefix + 'Add')([inputs, self.x])
+      x = self.layers.Add(name=prefix + 'Add')([inputs, x])
 
     self.last_block_output_shape = filters
+    return x
 
-  def _se_block(self, filters, se_ratio, prefix):
-    inputs_seblock = self.x
-    layers = self.layers()
-    self.x = layers.GlobalAveragePooling2D(name=prefix + 'squeeze_excite/AvgPool')(self.x)
-    self.x = layers.Dense(
-        _make_divisble(filters * se_ratio),
-        kernel_regularizer=KERNEL_REGULARIZER,
-        name=prefix + 'squeeze_excite/Dense')(
-            self.x)
-    self.x = layers.ReLU(name=prefix + 'squeeze_excite/Relu')(self.x)
-    self.x = layers.Dense(
-        filters,
-        kernel_regularizer=KERNEL_REGULARIZER,
-        name=prefix + 'squeeze_excite/Dense_1')(
-            self.x)
-    self.x = layers.Activation(hard_sigmoid, name=prefix + 'squeeze_excite/Hard_Sigmoid')(self.x)
-    self.x = layers.Multiply(name=prefix + 'squeeze_excite/Mul')([inputs_seblock, self.x])
+  def _se_block(self, x, filters, se_ratio, prefix):
+    inputs_seblock = x
+    layers = self.layers
+    x = layers.GlobalAveragePooling2D(name=prefix + 'squeeze_excite/AvgPool')(x)
+    x = layers.Dense(_make_divisible(filters * se_ratio), kernel_regularizer=KERNEL_REGULARIZER, name=prefix + 'squeeze_excite/Dense')(x)
+    x = layers.ReLU(name=prefix + 'squeeze_excite/Relu')(x)
+    x = layers.Dense(filters, kernel_regularizer=KERNEL_REGULARIZER, name=prefix + 'squeeze_excite/Dense_1')(x)
+    x = layers.Activation(hard_sigmoid, name=prefix + 'squeeze_excite/Hard_Sigmoid')(x)
+    if self.is_channels_first:
+      # if we are channel first, then
+      # inputs_seblock = (None, 96, 14, 14)
+      # x = (None, 96)
+      # we need to add 2 dimensions at the end of x so tf can perform the multiplication
+      x = tf.expand_dims(x, axis=-1)
+      x = tf.expand_dims(x, axis=-1)
+    x = layers.Multiply(name=prefix + 'squeeze_excite/Mul')([inputs_seblock, x])
+    return x
 
-  def model(self):
-    self.x = self.layers().Conv2D(
-        16 // self.factor,
-        kernel_size=3,
-        kernel_regularizer=KERNEL_REGULARIZER,
-        strides=(2, 2),
-        padding='same',
-        use_bias=False,
-        name='Conv')(self.x)
-    self.x = self.layers().BatchNormalization(
-        axis=self.channel_axis, epsilon=1e-3,
-        momentum=BATCH_NORM_MOMEMTUM, name='Conv/BatchNorm')(self.x)
-    self.x = self.layers().Activation(hard_swish, name='Conv/Hard_Swish')(self.x)
+  def model(self, x):
+    x = self.layers.Conv2D(16 // self.factor, kernel_size=3, strides=self.first_conv_stride, name='Conv', **self.conv_params)(x)
+    x = self.layers.BatchNormalization(name='Conv/BatchNorm', **self.bn_params)(x)
+    x = self.layers.Activation(hard_swish, name='Conv/Hard_Swish')(x)
 
     for i, layer in enumerate(self.config):
-      self._inverted_res_block(
-        layer[0], # expansion
-        _make_divisble(layer[1] * self.alpha) // self.factor, # filters
-        layer[2], # kernel
-        layer[3], # stride
-        layer[4], # se_ratio
-        layer[5], # activation
-        i  # block_id
-        )
-    
-    if type(self.x) == list:
-      last_conv_ch = _make_divisble(self.x[0].shape[self.channel_axis] * 6)
-    else:
-      last_conv_ch = _make_divisble(self.x.shape[self.channel_axis] * 6)
+      x = self._inverted_res_block(
+          x,
+          expansion=layer[0],
+          filters=_make_divisible(layer[1] * self.alpha) // self.factor,
+          kernel_size=layer[2],
+          stride=layer[3],
+          se_ratio=layer[4],
+          activation_fn=layer[5],
+          block_id=i
+      )
 
+    last_conv_ch = _make_divisible(x.shape[self.channel_axis] * 6)
 
     # if the width multiplier is greater than 1 we
     # increase the number of output channels
-    if self.alpha > 1.0: 
-      self.last_point_ch = _make_divisble(self.last_point_ch * self.alpha)
-    self.x = self.layers().Conv2D(
-        last_conv_ch,
-        kernel_size=1,
-        kernel_regularizer=KERNEL_REGULARIZER,
-        padding='same',
-        use_bias=False,
-        name='Conv_1')(self.x)
-    self.x = self.layers().BatchNormalization(
-        axis=self.channel_axis, epsilon=1e-3,
-        momentum=BATCH_NORM_MOMEMTUM, name='Conv_1/BatchNorm')(self.x)
-    self.x = self.layers().Activation(hard_swish, name='Conv_1/Hard_Swish')(self.x)
-    
-    self.x = self.layers().GlobalAveragePooling2D()(self.x)
+    if self.alpha > 1.0:
+      self.last_point_ch = _make_divisible(self.last_point_ch * self.alpha)
+    x = self.layers.Conv2D(last_conv_ch, kernel_size=1, name='Conv_1', **self.conv_params)(x)
+    x = self.layers.BatchNormalization(name='Conv_1/BatchNorm', **self.bn_params)(x)
+    x = self.layers.Activation(hard_swish, name='Conv_1/Hard_Swish')(x)
+
+    x = self.layers.GlobalAveragePooling2D()(x)
     if self.channel_axis == 1:
-      self.x = self.layers().Reshape((last_conv_ch, 1, 1))(self.x)
+      x = self.layers.Reshape((last_conv_ch, 1, 1))(x)
     else:
-      self.x = self.layers().Reshape((1, 1, last_conv_ch))(self.x)
+      x = self.layers.Reshape((1, 1, last_conv_ch))(x)
     if self.dropout_rate > 0:
-      self.x = self.layers().Dropout(self.dropout_rate)(self.x)
-    
-    self.x = self.layers().Conv2D(
-        self.last_point_ch // self.factor,
-        kernel_size=1,
-        kernel_regularizer=KERNEL_REGULARIZER,
-        padding='same',
-        use_bias=False,
-        name='Conv_2')(self.x)
-    self.x = self.layers().Activation(hard_swish, name='Conv_2/Hard_Swish')(self.x)
+      x = self.layers.Dropout(self.dropout_rate)(x)
 
-    self.x = self.layers().Flatten()(self.x)
-    self.x = self.layers().Dense(
-        self.label_dim, 
-        use_bias=True,
-        kernel_regularizer=KERNEL_REGULARIZER,
-        name='Logits')(self.x)
+    x = self.layers.Conv2D(self.last_point_ch // self.factor, kernel_size=1, name='Conv_2', **self.conv_params)(x)
+    x = self.layers.Activation(hard_swish, name='Conv_2/Hard_Swish')(x)
 
-  
+    x = self.layers.Flatten()(x)
+    return x
+
+
 class MobileNetV3Small(_MobileNetV3):
   """MobileNetV3 small version has 11 layers of inverted blocks.
 
@@ -263,28 +212,45 @@ class MobileNetV3Small(_MobileNetV3):
     dropout_rate: default rate is set to zero.
     config: configuration for the inverted residual blocks.
   """
+
   def __init__(self, *args, **kwargs):
-    self.alpha = 1.0
-    self.dropout_rate = 0
-    self.config = [
-    
-    # TODO plan to replace activation with strings
-    # expansion, filters, kernel, stride, se_ratio, activation
-    # paper 0.25 at the first block, using make divisble makes filters to 8 rather 16 and causing dimension issue at Multiply
-        (1,        16,      3,      2,      None,       relu), 
-        (4.5,      24,      3,      2,      None,       relu), 
-        (3.66,     24,      3,      1,      None,       relu), 
-        (4,        40,      5,      2,      0.25,       hard_swish), 
-        (6,        40,      5,      1,      0.25,       hard_swish), 
-        (6,        40,      5,      1,      0.25,       hard_swish), 
-        (3,        48,      5,      1,      0.25,       hard_swish), 
-        (3,        48,      5,      1,      0.25,       hard_swish), 
-        (6,        96,      5,      2,      0.25,       hard_swish), 
-        (6,        96,      5,      1,      0.25,       hard_swish), 
-        (6,        96,      5,      1,      0.25,       hard_swish), 
+    config = [
+        # TODO plan to replace activation with strings
+        # paper 0.25 at the first block, using make divisble makes filters to 8 rather 16 and causing dimension issue at Multiply
+        # expansion, filters, kernel, stride, se_ratio, activation
+        (1,        16,      3,      2,      None,       relu),
+        (4.5,      24,      3,      2,      None,       relu),
+        (3.66,     24,      3,      1,      None,       relu),
+        (4,        40,      5,      2,      0.25,       hard_swish),
+        (6,        40,      5,      1,      0.25,       hard_swish),
+        (6,        40,      5,      1,      0.25,       hard_swish),
+        (3,        48,      5,      1,      0.25,       hard_swish),
+        (3,        48,      5,      1,      0.25,       hard_swish),
+        (6,        96,      5,      2,      0.25,       hard_swish),
+        (6,        96,      5,      1,      0.25,       hard_swish),
+        (6,        96,      5,      1,      0.25,       hard_swish),
     ]
-    self.last_point_ch = 1024
-    super().__init__(*args, **kwargs)
+    super().__init__(1.0, 0, 2, config, 1024, *args, **kwargs)
+
+
+class MobileNetV3SmallCIFAR(_MobileNetV3):
+  def __init__(self, *args, **kwargs):
+    config = [
+        # expansion, filters, kernel, stride, se_ratio, activation
+        (1,        16,      3,      1,      None,       relu),
+        (4.5,      24,      3,      1,      None,       relu),
+        (3.66,     24,      3,      1,      None,       relu),
+        (4,        40,      5,      2,      0.25,       hard_swish),
+        (6,        40,      5,      1,      0.25,       hard_swish),
+        (6,        40,      5,      1,      0.25,       hard_swish),
+        (3,        48,      5,      1,      0.25,       hard_swish),
+        (3,        48,      5,      1,      0.25,       hard_swish),
+        (6,        96,      5,      2,      0.25,       hard_swish),
+        (6,        96,      5,      1,      0.25,       hard_swish),
+        (6,        96,      5,      1,      0.25,       hard_swish),
+    ]
+    super().__init__(1.0, 0, 1, config, 1024, *args, **kwargs)
+
 
 class MobileNetV3Large(_MobileNetV3):
   """MobileNetV3 large version has 15 layers of inverted blocks.
@@ -302,11 +268,10 @@ class MobileNetV3Large(_MobileNetV3):
     dropout_rate: default rate is set to zero.
     config: configuration for the inverted residual blocks.
   """
+
   def __init__(self, *args, **kwargs):
-    self.alpha = 1.0
-    self.dropout_rate = 0
-    self.config = [
-    # expansion, filters, kernel, stride, se_ratio, activation   
+    config = [
+        # expansion, filters, kernel, stride, se_ratio, activation
         (1,        16,      3,      1,      None,       relu),
         (4,        24,      3,      2,      None,       relu),
         (3,        24,      3,      1,      None,       relu),
@@ -323,5 +288,27 @@ class MobileNetV3Large(_MobileNetV3):
         (6,        160,     5,      1,      0.25,       hard_swish),
         (6,        160,     5,      1,      0.25,       hard_swish),
     ]
-    self.last_point_ch = 1280
-    super().__init__(*args, **kwargs)
+    super().__init__(1.0, 0, 2, config, 1280, *args, **kwargs)
+
+
+class MobileNetV3LargeCIFAR(_MobileNetV3):
+  def __init__(self, *args, **kwargs):
+    config = [
+        # expansion, filters, kernel, stride, se_ratio, activation
+        (1,        16,      3,      1,      None,       relu),
+        (4,        24,      3,      1,      None,       relu),
+        (3,        24,      3,      1,      None,       relu),
+        (3,        40,      5,      1,      0.25,       relu),
+        (3,        40,      5,      1,      0.25,       relu),
+        (3,        40,      5,      1,      0.25,       relu),
+        (6,        80,      3,      2,      None,       hard_swish),
+        (2.5,      80,      3,      1,      None,       hard_swish),
+        (2.3,      80,      3,      1,      None,       hard_swish),
+        (2.3,      80,      3,      1,      None,       hard_swish),
+        (6,        112,     3,      1,      0.25,       hard_swish),
+        (6,        112,     3,      1,      0.25,       hard_swish),
+        (6,        160,     5,      2,      0.25,       hard_swish),
+        (6,        160,     5,      1,      0.25,       hard_swish),
+        (6,        160,     5,      1,      0.25,       hard_swish),
+    ]
+    super().__init__(1.0, 0, 1, config, 1280, *args, **kwargs)

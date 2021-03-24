@@ -10,11 +10,12 @@ arguments = [
 
 
 def main():
-  args = argparse.parse_cmd(arguments)
+  config = argparse.parse_cmd(arguments)
   datasets = {
-      'train': dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['train_list'], num_classes=10, split='train'),
-      'val': dataloader.get_dataset(args['dataloader'], transformation_list=args['dataloader']['val_list'], num_classes=10, split='test')
+      'train': dataloader.get_dataset(config['dataloader'], transformation_list=config['dataloader']['train_list'], num_classes=10, split=config['dataloader']['train_split_id']),
+      'val': dataloader.get_dataset(config['dataloader'], transformation_list=config['dataloader']['val_list'], num_classes=10, split=config['dataloader']['val_split_id'])
   }
+
   for dataset_type in ['train', 'val']:
     for i, (images, y) in enumerate(datasets[dataset_type]):
       image = images[0]

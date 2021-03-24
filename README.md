@@ -10,13 +10,13 @@ Hi there 👋
 
 We are really excited today to open our Github to the world! After months of research and development we decided to start giving back to the community with our first open-source repository.
 
-We are sharing a classification code that we use internally to benchmark our engine on several datasets.
+We are sharing an image classification code that we use internally to benchmark our engine on several datasets.
 
 This training script has also been shared to our clients to smooth the first time use of our product and  simplify the creation of state-of-the-art neural networks.
 
 We hope it will bring value to you as well!
 
-Here you will find how to convert your dataset to TFRecord format, load them with an efficient data pipeline with various data augmentation strategies and classic deep learning models.
+Here you will find how to convert your images dataset to TFRecord format, load them with an efficient data pipeline with various data augmentation strategies and classic deep learning models.
 
 We are also working on an integration of Keras-Tuner for metaparameter search and Differential architectures search method for auto-ml experiments.
 

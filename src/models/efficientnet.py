@@ -13,10 +13,10 @@ import os
 import math
 import tensorflow as tf
 from copy import deepcopy
-from .generic_model import GenericModel
+from .generic_model import GenericModelBuilder
 
 
-def correct_pad(inputs, kernel_size):
+def correct_pad(inputs, kernel_size, is_channels_first):
   """Returns a tuple for zero-padding for 2D convolution with downsampling.
   Args:
       input_size: An integer or tuple/list of 2 integers.
@@ -24,24 +24,14 @@ def correct_pad(inputs, kernel_size):
   Returns:
       A tuple.
   """
-  img_dim = 1
   if type(inputs) == list:
     inputs = inputs[0]
-  input_size = tf.keras.backend.int_shape(inputs)[img_dim:(img_dim + 2)]
-
+  input_size = inputs.shape[2:4] if is_channels_first else inputs.shape[1:3]
   if isinstance(kernel_size, int):
     kernel_size = (kernel_size, kernel_size)
-
-  if input_size[0] is None:
-    adjust = (1, 1)
-  else:
-    adjust = (1 - input_size[0] % 2, 1 - input_size[1] % 2)
-
+  adjust = (1, 1) if input_size[0] is None else (1 - input_size[0] % 2, 1 - input_size[1] % 2)
   correct = (kernel_size[0] // 2, kernel_size[1] // 2)
-
-  return ((correct[0] - adjust[0], correct[0]),
-          (correct[1] - adjust[1], correct[1]))
-
+  return ((correct[0] - adjust[0], correct[0]), (correct[1] - adjust[1], correct[1]))
 
 DEFAULT_BLOCKS_ARGS = [
     {'kernel_size': 3, 'repeats': 1, 'filters_in': 32, 'filters_out': 16, 'expand_ratio': 1, 'id_skip': True, 'strides': 1, 'se_ratio': 0.25},
@@ -88,23 +78,18 @@ def swish(x):
   return tf.nn.swish(x)
 
 
-class EfficientNet(GenericModel):
+class EfficientNet(GenericModelBuilder):
   def __init__(self,
                width_coefficient,
                depth_coefficient,
                default_size,
                dropout_rate,
-               framework: str,  # needed by GenericModel
-               factor,  # needed by GenericModel
                drop_connect_rate=0.2,
                depth_divisor=8,
                activation_fn=swish,
                blocks_args=DEFAULT_BLOCKS_ARGS,
                pooling=None,
-               input_shape=(224, 224, 3),  # needed by GenericModel
-               label_dim=1000,  # needed by GenericModel
-               n_layers_before_tf=0,  # needed by GenericModel
-               cpu=False  # needed by GenericModel
+               *args, **kwargs
                ):
     """
     # Arguments
@@ -125,7 +110,7 @@ class EfficientNet(GenericModel):
     self.depth_divisor = depth_divisor
     self.activation_fn = activation_fn
     self.blocks_args = blocks_args
-    super().__init__(framework, factor, input_shape, label_dim, n_layers_before_tf, cpu)
+    super().__init__(*args, **kwargs)
 
   def round_filters(self, filters, divisor=None):
     """Round number of filters based on depth multiplier."""
@@ -161,8 +146,7 @@ class EfficientNet(GenericModel):
     # Returns
         output tensor for the block.
     """
-    layers = self.layers()  # because don't want to change the framework in the middle of a block
-    bn_axis = 3 if tf.keras.backend.image_data_format() == 'channels_last' else 1
+    layers = self.layers # because don't want to change the framework in the middle of a block
 
     # Expansion phase
     filters = int(filters_in * expand_ratio) if expand_ratio == 1 else int(filters_in * expand_ratio / self.factor)
@@ -172,25 +156,25 @@ class EfficientNet(GenericModel):
                         use_bias=False,
                         kernel_initializer=CONV_KERNEL_INITIALIZER,
                         name=name + 'expand_conv')(inputs)
-      x = layers.BatchNormalization(axis=bn_axis, name=name + 'expand_bn')(x)
+      x = layers.BatchNormalization(axis=self.channel_axis, name=name + 'expand_bn')(x)
       x = layers.Activation(activation_fn, name=name + 'expand_activation')(x)
     else:
       x = inputs
 
     # Depthwise Convolution
     if strides == 2:
-      x = layers.ZeroPadding2D(padding=correct_pad(x, kernel_size), name=name + 'dwconv_pad')(x)
+      x = layers.ZeroPadding2D(padding=correct_pad(x, kernel_size, self.is_channels_first), name=name + 'dwconv_pad')(x)
       conv_pad = 'valid'
     else:
       conv_pad = 'same'
     x = layers.DepthwiseConv2D(kernel_size, strides=strides, padding=conv_pad, use_bias=False, depthwise_initializer=CONV_KERNEL_INITIALIZER, name=name + 'dwconv')(x)
-    x = layers.BatchNormalization(axis=bn_axis, name=name + 'bn')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=name + 'bn')(x)
     x = layers.Activation(activation_fn, name=name + 'activation')(x)
     # Squeeze and Excitation phase
     if 0 < se_ratio <= 1:
       filters_se = max(1, int(filters_in * se_ratio)) if expand_ratio == 1 else max(1, int(filters_in * se_ratio / self.factor))
       se = layers.GlobalAveragePooling2D(name=name + 'se_squeeze')(x)
-      if bn_axis == 1:
+      if self.channel_axis == 1:
         se = layers.Reshape((filters, 1, 1), name=name + 'se_reshape')(se)
       else:
         se = layers.Reshape((1, 1, filters), name=name + 'se_reshape')(se)
@@ -200,25 +184,24 @@ class EfficientNet(GenericModel):
 
     # Output phase
     x = layers.Conv2D(filters_out/self.factor, 1, padding='same', use_bias=False, kernel_initializer=CONV_KERNEL_INITIALIZER, name=name + 'project_conv')(x)
-    x = layers.BatchNormalization(axis=bn_axis, name=name + 'project_bn')(x)
+    x = layers.BatchNormalization(axis=self.channel_axis, name=name + 'project_bn')(x)
     if (id_skip is True and strides == 1 and filters_in == filters_out):
       if drop_rate > 0:
         x = layers.Dropout(drop_rate, noise_shape=(None, 1, 1, 1), name=name + 'drop')(x)
       x = layers.Add(name=name + 'add')([x, inputs])
     return x
 
-  def model(self):
-    bn_axis = 3 if tf.keras.backend.image_data_format() == 'channels_last' else 1
+  def model(self, x):
     # Build stem
-    self.x = self.layers().ZeroPadding2D(padding=correct_pad(self.x, 3))(self.x)
-    self.x = self.layers().Conv2D(self.round_filters(32), 3,
+    x = self.layers.ZeroPadding2D(padding=correct_pad(x, 3, self.is_channels_first))(x)
+    x = self.layers.Conv2D(self.round_filters(32), 3,
                                   strides=2,
                                   padding='valid',
                                   use_bias=False,
                                   kernel_initializer=CONV_KERNEL_INITIALIZER,
-                                  name='stem_conv')(self.x)
-    self.x = self.layers().BatchNormalization(axis=bn_axis, name='stem_bn')(self.x)
-    self.x = self.layers().Activation(self.activation_fn, name='stem_activation')(self.x)
+                                  name='stem_conv')(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis, name='stem_bn')(x)
+    x = self.layers.Activation(self.activation_fn, name='stem_activation')(x)
 
     # Build blocks
     blocks_args = deepcopy(self.blocks_args)
@@ -235,62 +218,63 @@ class EfficientNet(GenericModel):
         if j > 0:
           args['strides'] = 1
           args['filters_in'] = args['filters_out']
-        self.x = self.block(self.x, self.activation_fn, self.drop_connect_rate * b / blocks,
+        x = self.block(x, self.activation_fn, self.drop_connect_rate * b / blocks,
                             name='block{}{}_'.format(i + 1, chr(j + 97)), **args)
         b += 1
 
     # Build top
-    self.x = self.layers().Conv2D(self.round_filters(1280), 1,
+    x = self.layers.Conv2D(self.round_filters(1280), 1,
                                   padding='same',
                                   use_bias=False,
                                   kernel_initializer=CONV_KERNEL_INITIALIZER,
-                                  name='top_conv')(self.x)
-    self.x = self.layers().BatchNormalization(axis=bn_axis, name='top_bn')(self.x)
-    self.x = self.layers().Activation(self.activation_fn, name='top_activation')(self.x)
+                                  name='top_conv')(x)
+    x = self.layers.BatchNormalization(axis=self.channel_axis, name='top_bn')(x)
+    x = self.layers.Activation(self.activation_fn, name='top_activation')(x)
 
-    self.x = self.layers().GlobalAveragePooling2D(name='avg_pool')(self.x)
+    x = self.layers.GlobalAveragePooling2D(name='avg_pool')(x)
     if self.dropout_rate > 0:
-      self.x = self.layers().Dropout(self.dropout_rate, name='top_dropout')(self.x)
-    self.x = self.layers().Dense(self.label_dim,
+      x = self.layers.Dropout(self.dropout_rate, name='top_dropout')(x)
+    x = self.layers.Dense(self.num_classes,
                                  kernel_initializer=DENSE_KERNEL_INITIALIZER,
-                                 name='probs')(self.x)
+                                 name='probs')(x)
+    return x
 
 
 class EfficientNetB0(EfficientNet):
-  def __init__(self, framework, factor, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False):
-    super().__init__(1.0, 1.0, 224, 0.2, framework, factor, input_shape=input_shape, label_dim=label_dim, n_layers_before_tf=n_layers_before_tf, cpu=cpu)
+  def __init__(self, *args, **kwargs):
+    super().__init__(1.0, 1.0, 224, 0.2, *args, **kwargs)
 
 
 class EfficientNetB1(EfficientNet):
-  def __init__(self, framework, factor, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False):
-    super().__init__(1.0, 1.1, 240, 0.2, framework, factor, input_shape=input_shape, label_dim=label_dim, n_layers_before_tf=n_layers_before_tf, cpu=cpu)
+  def __init__(self, *args, **kwargs):
+    super().__init__(1.0, 1.1, 240, 0.2, *args, **kwargs)
 
 
 class EfficientNetB2(EfficientNet):
-  def __init__(self, framework, factor, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False):
-    super().__init__(1.1, 1.2, 260, 0.3, framework, factor, input_shape=input_shape, label_dim=label_dim, n_layers_before_tf=n_layers_before_tf, cpu=cpu)
+  def __init__(self, *args, **kwargs):
+    super().__init__(1.1, 1.2, 260, 0.3, *args, **kwargs)
 
 
 class EfficientNetB3(EfficientNet):
-  def __init__(self, framework, factor, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False):
-    super().__init__(1.2, 1.4, 300, 0.3, framework, factor, input_shape=input_shape, label_dim=label_dim, n_layers_before_tf=n_layers_before_tf, cpu=cpu)
+  def __init__(self, *args, **kwargs):
+    super().__init__(1.2, 1.4, 300, 0.3, *args, **kwargs)
 
 
 class EfficientNetB4(EfficientNet):
-  def __init__(self, framework, factor, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False):
-    super().__init__(1.4, 1.8, 380, 0.4, framework, factor, input_shape=input_shape, label_dim=label_dim, n_layers_before_tf=n_layers_before_tf, cpu=cpu)
+  def __init__(self, *args, **kwargs):
+    super().__init__(1.4, 1.8, 380, 0.4, *args, **kwargs)
 
 
 class EfficientNetB5(EfficientNet):
-  def __init__(self, framework, factor, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False):
-    super().__init__(1.6, 2.2, 456, 0.4, framework, factor, input_shape=input_shape, label_dim=label_dim, n_layers_before_tf=n_layers_before_tf, cpu=cpu)
+  def __init__(self, *args, **kwargs):
+    super().__init__(1.6, 2.2, 456, 0.4, *args, **kwargs)
 
 
 class EfficientNetB6(EfficientNet):
-  def __init__(self, framework, factor, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False):
-    super().__init__(1.8, 2.6, 528, 0.5, framework, factor, input_shape=input_shape, label_dim=label_dim, n_layers_before_tf=n_layers_before_tf, cpu=cpu)
+  def __init__(self, *args, **kwargs):
+    super().__init__(1.8, 2.6, 528, 0.5, *args, **kwargs)
 
 
 class EfficientNetB7(EfficientNet):
-  def __init__(self, framework, factor, input_shape=(224, 224, 3), label_dim=1000, n_layers_before_tf=0, cpu=False):
-    super().__init__(2.0, 3.1, 600, 0.5, framework, factor, input_shape=input_shape, label_dim=label_dim, n_layers_before_tf=n_layers_before_tf, cpu=cpu)
+  def __init__(self, *args, **kwargs):
+    super().__init__(2.0, 3.1, 600, 0.5, *args, **kwargs)
