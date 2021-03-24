@@ -10,6 +10,7 @@ from submodules.global_dl.training import alchemy_api
 from submodules.global_dl.training import export
 from submodules.global_dl.training.optimizers import get_lr_scheduler, get_optimizer, arguments
 from submodules.global_dl.training import optimizers
+from submodules.global_dl.training import metrics
 
 
 arguments = [
@@ -30,6 +31,7 @@ arguments = [
         [float, "drop_path_prob", 0.3, 'drop path probability'],
         [int, "num_classes", 0, 'Number of classes', lambda x: x > 0],  # TODO this number should be computed from dataset
         [bool, "channels_first", False, 'Start training with channels first'],
+        [bool, "calculate_flops", False, 'when true displays the total FLOPs for the given model'], # TODO can be removed when issue with type1 is fixed
         ['namespace', 'conversion_params', [
             # [bool, 'output_layer_before_up2tf', False, 'Whether to use final output layer before UpStride2TF conversion or not'],
             [str, 'tf2up_strategy', '', 'TF2UpStride conversion strategy'],
@@ -60,6 +62,10 @@ def get_compiled_model(config):
 
   model = model_name_to_class[config['model']['name']](**kwargs).build()
   model.summary()
+  # calculates FLOPs for the Model.
+  if config['model']['calculate_flops']:
+    calc_flops = metrics.count_flops_efficient(model, config['model']['upstride_type'])
+    print(f"Total FLOPs for {config['model']['name']}: {calc_flops}")
   optimizer = get_optimizer(config['optimizer'])
   model.compile(optimizer=optimizer, loss='categorical_crossentropy',
                 metrics=['accuracy', 'top_k_categorical_accuracy'])
@@ -139,18 +145,18 @@ def train(config):
     callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_begin=lambda epoch, logs: callback_epoch(epoch, config['num_epochs'], config['drop_path_prob'])))
 
   # 6 training
-  model.fit(x=train_dataset,
-            validation_data=val_dataset,
-            epochs=config['num_epochs'],
-            callbacks=callbacks,
-            max_queue_size=16,
-            initial_epoch=latest_epoch
-            )
+  # model.fit(x=train_dataset,
+  #           validation_data=val_dataset,
+  #           epochs=config['num_epochs'],
+  #           callbacks=callbacks,
+  #           max_queue_size=16,
+  #           initial_epoch=latest_epoch
+  #           )
 
-  # 7 training
-  print("export model")
-  export.export(model, export_dir, config)
-  print("Training Completed!!")
+  # # 7 training
+  # print("export model")
+  # export.export(model, export_dir, config)
+  # print("Training Completed!!")
 
 
 if __name__ == '__main__':
