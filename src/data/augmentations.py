@@ -35,7 +35,8 @@ AUGMENTATION_LIST = [
     'Resize',
     'ResizeThenRandomCrop',
     'Translate',
-    'Cutout'
+    'Cutout',
+    'Pad'
 ]
 
 
@@ -87,6 +88,11 @@ arguments = [
     ]],
     ['namespace', 'Cutout', [
         [int, "length", 16, 'cutout length'],
+    ]],
+    ['namespace', 'Pad', [
+        ['list[int]', "padding", 1, 'List(int) or Tuple(int) or int value used to pad the image (top, bottom, left and right)'],
+        [str, "padding_strategy", "REFLECT", 'padding strategy to fill the missing pixels after translation'],
+        [int, "pad_constant_value", 0, 'Integer value that is used to fill the padding when padding_strategy is "CONSTANT"']
     ]]
 ]
 
@@ -534,6 +540,7 @@ class Translate:
                 (num_rows, num_columns) (HW)
           width_shift_range: randomly shift images horizontally (fraction of total width)
           height_shift_range: randomly shift images vertically (fraction of total height)
+
       Returns:
           translated image
   """
@@ -557,7 +564,7 @@ class Translate:
     dx = tf.random.uniform(shape=[], minval=-width_shift_range, maxval=width_shift_range, dtype=tf.int32)
     dy = tf.random.uniform(shape=[], minval=-height_shift_range, maxval=height_shift_range, dtype=tf.int32)
 
-    # Commenting this code to reduce the the probably that translation might not be applied. 
+    # Commenting this code to reduce the the probablity that translation might not be applied. 
 
     # prob_dx = tf.random.uniform(shape=[], minval=0., maxval=1., dtype=tf.float32)
     # prob_dy = tf.random.uniform(shape=[], minval=0., maxval=1., dtype=tf.float32)
@@ -578,4 +585,56 @@ class Translate:
     x = tf.cond(tf.math.equal(pad_up, 0), lambda: x, lambda: x[:-pad_up, :, :])
 
     x = tf.pad(x, [[pad_up, pad_down], [pad_left, pad_right], [0,0]], self.padding_strategy)
+    return x
+
+
+class Pad:
+  def __init__(self, config):
+    """Pads the image with padding values and strategy.
+
+    Args:
+        padding (int, List[int], Tuple[int]): Depending on the Datatype image is padded with the values accordingly
+        - if int = n, image is padded n times symetrically (i.e padding on top = bottom = left = right = n)
+        - if Tuple/List with length = 2. eg: (m, n), top = bottom = m and left = right = n. 
+        - if Tuple/List with length = 4. eg: (m, n, o, p), top = m, bottom = n, left = o , right = p.
+        padding_strategy (str): tf.pad takes one of these ("CONSTANT", "REFLECT", "SYMMETRIC") values to interpolate the missing pixels
+        pad_constant_value (int): used to fill with constant value when padding_strategy is "CONSTANT"
+
+    returns:
+        (tf.Tensor): 
+    """
+    # check for TypeErrors
+    self.padding = config['padding']
+    if not isinstance(self.padding, (tuple, list, int)):
+      raise TypeError(f"Invalid {type(self.padding)} type. Only tuple, list and int supported")
+    self.padding_strategy = config['padding_strategy'].upper()
+    assert self.padding_strategy in ["CONSTANT", "REFLECT", "SYMMETRIC"], f"{self.padding_strategy} is not valid padding strategy"
+    self.pad_constant_value = config['pad_constant_value']
+    if not isinstance(self.pad_constant_value, int):
+      raise TypeError(f"Invalid {type(self.pad_constant_value)} type. Only int supported")
+    
+    # format self.paddings accordingly to len 1, 2 or 4
+    if isinstance(self.padding, (tuple, list)): 
+      assert all(isinstance(x, int) for x in self.padding), "Only Tuple[int] or List[int] supported"
+      padding_length = len(self.padding)
+      if padding_length == 1: 
+        self.padding = [self.padding * 2, self.padding * 2] # if padding is [n] [[n, n], [n, n]]
+      elif padding_length == 2: 
+        # extra [] to convert to list. eg: 5 becomes [5, 5]
+        top_bottom = [self.padding[0]] * 2
+        left_right = [self.padding[1]] * 2
+        self.padding = [top_bottom, left_right] # pad top/bottom and left/right 
+      elif padding_length == 4:
+        top, bottom, left, right = self.padding # unpack each value from list/tuple
+        self.padding = [[top, bottom], [left, right]]
+      else:
+        raise ValueError(f"{self.padding} should contain atleast 1 or 2 or 4 elements")
+    else: # when type is int. Initial type checks will catch if anything other than tuple, list, int
+      self.padding = [[self.padding] * 2] * 2 # if self.padding is 5, then [[5, 5], [5, 5]]
+      
+    # [[0, 0]] required to ignore padding the channel dimension
+    self.padding = self.padding + [[0, 0]] 
+
+  def __call__(self, x):
+    x = tf.pad(x, self.padding, self.padding_strategy, self.pad_constant_value)
     return x
