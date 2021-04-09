@@ -125,7 +125,7 @@ class GenericModelBuilder:
 
     output_tensors = self.change_framework_if_necessary("end_before_dense", output_tensors)
     for i, x in enumerate(output_tensors):
-      output_tensors[i] = self.layers.Dense(self.num_classes, use_bias=True, name=f'Logits_{i}', kernel_regularizer=self.weight_regularizer)(x)
+      output_tensors[i] = self.layers.Dense(self.num_classes, use_bias=True, name=f'Logits_{i}', kernel_regularizer=self.weight_regularizer, bias_regularizer=self.weight_regularizer)(x)
     output_tensors = self.change_framework_if_necessary("end_after_dense", output_tensors)
 
     for i, x in enumerate(output_tensors):

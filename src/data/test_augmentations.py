@@ -317,7 +317,6 @@ class TestAugmentations(unittest.TestCase):
     print(image.numpy().shape)
     
   def test_pad(self):
-    # for pad_strategy in self.padding_strategy:
     config = {
       'padding': 1,
       'pad_constant_value': 1,
@@ -338,3 +337,4 @@ class TestAugmentations(unittest.TestCase):
     config['padding'] = pad_type
     image = augmentations.Pad(config)(self.small_rand_image)
     self.assertTrue(image.shape, (10, 13, 3)) 
+    
