@@ -12,6 +12,7 @@ class TestAugmentations(unittest.TestCase):
     self.stddev_rgb = [0.229, 0.224, 0.225]
     self.image = np.ones((224, 224, 3), dtype=np.uint8) * 255.
     self.rand_image = np.random.randint(0, 255, (224, 224, 3), dtype=np.int)
+    self.small_rand_image = np.random.randint(0, 255, (5, 4, 3), dtype=np.int)
     self.INTERPOLATION_METHODS = [
         'bilinear',
         'lanczos3',
@@ -23,6 +24,7 @@ class TestAugmentations(unittest.TestCase):
         'area',
         'mitchellcubic'
     ]
+    self.padding_strategy = ["CONSTANT", "REFLECT", "SYMMETRIC"] 
 
   def test_normalize(self):
     red_value = (1 - self.mean_rgb[0]) / self.stddev_rgb[0]
@@ -193,27 +195,19 @@ class TestAugmentations(unittest.TestCase):
         output = augmentations.CentralCrop(config)(self.image)
 
   def test_random_horizontal_vertical_flip_rotate_90(self):
-    
-    # Seed 0 ensures the random seed first output from random_augmentations will be augmented.
-    tf.random.set_seed(0)
+    sum_pixels = np.sum(self.rand_image)
 
-    # Test Random Horizontal Flip
-    output = augmentations.RandomHorizontalFlip({})(self.rand_image)
-    self.assertFalse(np.allclose(output.numpy(), self.rand_image))
-    self.assertEqual(output.shape, [224, 224, 3])
+    output = [
+        augmentations.RandomHorizontalFlip({})(self.rand_image),
+        augmentations.RandomVerticalFlip({})(self.rand_image),
+        augmentations.RandomRotate90({})(self.rand_image)
+    ]
 
-    # Test Random Veritical Flip
-    tf.random.set_seed(1)
-    output = augmentations.RandomVerticalFlip({})(self.rand_image)
-    self.assertFalse(np.allclose(output.numpy(), self.rand_image))
-    self.assertEqual(output.shape, [224, 224, 3])
-
-    # Test Random Rotate 90
-    tf.random.set_seed(1)
-    output = augmentations.RandomRotate90({})(self.rand_image)
-    self.assertFalse(np.allclose(output, self.rand_image))
-    self.assertEqual(output.shape, [224, 224, 3])
-    
+    for i in output:
+      # check pixel are only shifted and not changed
+      self.assertEqual(np.sum(i), sum_pixels)
+      # check if the size remains the same
+      self.assertEqual(i.shape, [224, 224, 3])
 
   def test_colorjitter(self):
     # case 1 value is zero
@@ -282,10 +276,9 @@ class TestAugmentations(unittest.TestCase):
       self.assertTrue((total_trial - num_of_times_rot_not_applied) > 0)
 
   def test_translate(self):
-    padding_stragies = ["CONSTANT", "REFLECT", "SYMMETRIC"] 
     width_shift_range = 0.1
     height_shift_range = 0.1
-    for strategy in padding_stragies:
+    for strategy in self.padding_strategy:
       config = {
         'width_shift_range': width_shift_range,
         'height_shift_range': height_shift_range,
@@ -322,4 +315,32 @@ class TestAugmentations(unittest.TestCase):
     image = tf.cast(image, tf.uint8)
     self.assertEqual(image.numpy().sum(), ((224**2-16**2) * 3)*255)
     print(image.numpy().shape)
+    
+  def test_pad(self):
+    config = {
+      'padding': 1,
+      'pad_constant_value': 1,
+      'padding_strategy': "CONSTANT"
+    }
+    padding_test = [1, [1, 1], [1, 1, 1, 1]] # pads image with 1 pixel on each side
+    for pad_type in padding_test:
+      config['padding'] = pad_type
+      image = augmentations.Pad(config)(self.small_rand_image)
+      self.assertTrue(image.shape, (7, 6, 3)) 
+
+    padding_test_zeros = [0, [0, 0], [0, 0, 0, 0]] # pads image with 0 pixel on each side
+    for pad_type in padding_test_zeros:
+      config['padding'] = pad_type
+      image = augmentations.Pad(config)(self.small_rand_image)
+      self.assertTrue(image.shape, self.small_rand_image.shape) # image shape should be same as input image
+      
+    pad_type = [1, 2] # pad top, bottom with 1 and left and right with 2 pixels
+    config['padding'] = pad_type
+    image = augmentations.Pad(config)(self.small_rand_image)
+    self.assertTrue(image.shape, (7, 8, 3)) 
+
+    pad_type = [2, 3, 4, 5] 
+    config['padding'] = pad_type
+    image = augmentations.Pad(config)(self.small_rand_image)
+    self.assertTrue(image.shape, (10, 13, 3)) 
     
