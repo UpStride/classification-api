@@ -13,17 +13,18 @@ class ComplexNet(GenericModelBuilder):
     self.conv_args = {
         "padding": "same",
         "use_bias": False,
-        "kernel_regularizer": tf.keras.regularizers.l2(l=0.0001),
+        "kernel_regularizer": self.weight_regularizer,
+        "kernel_initializer": "he_ind"
     }
 
   def residual_block(self, x, channels: int, downsample=False):
     layers = self.layers
     x_init = x
     strides = (2, 2) if downsample else (1, 1)
-    x = layers.BatchNormalization(**self.bn_args)(x)
+    x = layers.BatchNormalizationC(**self.bn_args)(x)
     x = layers.Activation('relu')(x)
     x = layers.Conv2D(channels, 3, strides, **self.conv_args)(x)
-    x = layers.BatchNormalization(**self.bn_args)(x)
+    x = layers.BatchNormalizationC(**self.bn_args)(x)
     x = layers.Activation('relu')(x)
     x = layers.Conv2D(channels, 3, **self.conv_args)(x)
     if not downsample:
@@ -51,9 +52,9 @@ class ComplexNet(GenericModelBuilder):
       x = self.learnVectorBlock(x)
       x = tf.keras.layers.Concatenate(axis=self.channel_axis)([r, x])
       self.conv_args['kernel_initializer'] = 'he_normal'
-
+    
     x = self.layers.Conv2D(n_channels, 3, **self.conv_args)(x)
-    x = self.layers.BatchNormalization(**self.bn_args)(x)
+    x = self.layers.BatchNormalizationC(**self.bn_args)(x)
     x = self.layers.Activation('relu')(x)
 
     # First stage
