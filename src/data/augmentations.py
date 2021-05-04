@@ -607,16 +607,16 @@ class Pad:
     # check for TypeErrors
     self.padding = config['padding']
     if not isinstance(self.padding, (tuple, list, int)):
-      raise TypeError(f"Invalid {type(self.padding)} type. Only tuple, list and int supported")
+      raise TypeError(f"Invalid {type(self.padding)} type. Only tuple, list and int are supported")
     self.padding_strategy = config['padding_strategy'].upper()
-    assert self.padding_strategy in ["CONSTANT", "REFLECT", "SYMMETRIC"], f"{self.padding_strategy} is not valid padding strategy"
+    assert self.padding_strategy in ["CONSTANT", "REFLECT", "SYMMETRIC"], f"{self.padding_strategy} is not a valid padding strategy"
     self.pad_constant_value = config['pad_constant_value']
     if not isinstance(self.pad_constant_value, int):
-      raise TypeError(f"Invalid {type(self.pad_constant_value)} type. Only int supported")
+      raise TypeError(f"Invalid {type(self.pad_constant_value)} type. Only int is supported")
     
     # format self.paddings accordingly to len 1, 2 or 4
     if isinstance(self.padding, (tuple, list)): 
-      assert all(isinstance(x, int) for x in self.padding), "Only Tuple[int] or List[int] supported"
+      assert all(isinstance(x, int) for x in self.padding), "Only Tuple[int] or List[int] are supported"
       padding_length = len(self.padding)
       if padding_length == 1: 
         self.padding = [self.padding * 2, self.padding * 2] # if padding is [n] [[n, n], [n, n]]
@@ -629,11 +629,11 @@ class Pad:
         top, bottom, left, right = self.padding # unpack each value from list/tuple
         self.padding = [[top, bottom], [left, right]]
       else:
-        raise ValueError(f"{self.padding} should contain atleast 1 or 2 or 4 elements")
+        raise ValueError(f"{self.padding} should contain exactly 1 or 2 or 4 elements")
     else: # when type is int. Initial type checks will catch if anything other than tuple, list, int
       self.padding = [[self.padding] * 2] * 2 # if self.padding is 5, then [[5, 5], [5, 5]]
       
-    # [[0, 0]] required to ignore padding the channel dimension
+    # contatenate [[0, 0]] to pad the channel dimension
     self.padding = self.padding + [[0, 0]] 
 
   def __call__(self, x):
